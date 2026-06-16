@@ -146,6 +146,7 @@ const COLORS = {
   label:    '#7ba081',
   text:     '#bfe3b5',
   timeline: '#dcefd2',  // solid "now" line
+  flame:    '#ff5630',  // flame red (TimeTrap hot-button) for the time-line + current time
   slice:    '#cfe8c5',  // the movable slice cursor line
   red:      '#ff4133'
 };
@@ -326,7 +327,7 @@ function draw(){
   if(state.detached && !state.snappedNow && isToday()){
     const ny = timeToY(currentMinutes());
     if(ny>=barTop && ny<=barBot){
-      ctx.strokeStyle = COLORS.timeline;
+      ctx.strokeStyle = COLORS.flame;
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(barX-16, ny); ctx.lineTo(barX+16, ny); ctx.stroke();
       // current time, in the hash column, on an opaque frame that masks the ticks
@@ -337,7 +338,7 @@ function draw(){
         const tw = ctx.measureText(txt).width;
         ctx.fillStyle = COLORS.bg;
         ctx.fillRect(12, ny-9, tw+8, 18);
-        ctx.fillStyle = COLORS.timeline;
+        ctx.fillStyle = COLORS.flame;
         ctx.fillText(txt, 16, ny+4);
       }
     }
