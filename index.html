@@ -79,6 +79,11 @@ body{
 .ghostbtn:active{color:var(--dim);}
 .muted{color:var(--dim);font-size:13px;}
 #sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+
+/* desktop zoom buttons (top-left, above the ticks) */
+#zoom{position:absolute;left:12px;top:calc(env(safe-area-inset-top,0) + 12px);display:flex;gap:6px;pointer-events:auto;z-index:5;}
+#zoom button{width:30px;height:30px;font-family:inherit;font-size:19px;line-height:1;color:var(--dim);background:rgba(191,227,181,0.08);border:1px solid rgba(191,227,181,0.25);border-radius:8px;cursor:pointer;padding:0;}
+#zoom button:active{color:var(--text);background:rgba(191,227,181,0.18);}
 </style>
 </head>
 <body>
@@ -91,6 +96,11 @@ body{
 </div>
 
 <div id="hamb"><i></i><i></i><i></i></div>
+
+<div id="zoom">
+  <button id="zoomOut" aria-label="Zoom out">&minus;</button>
+  <button id="zoomIn" aria-label="Zoom in">+</button>
+</div>
 
 <div id="sheet">
   <span id="sheetClose">&times;</span>
@@ -152,6 +162,7 @@ const state = {
   anchorsByDay: {},       // 'YYYY-MM-DD' -> sorted array of minutes
   sliceTime: null,        // minutes; null = follows current time
   detached: false,        // true once the user has dragged the slice line away
+  snappedNow: false,      // slice line currently snapped onto the now time-line
   minimal: false,
   flashStart: 0           // timestamp of last slice flash
 };
@@ -189,10 +200,17 @@ function layout(){
   cv.width = W*dpr; cv.height = H*dpr;
   cv.style.width = W+'px'; cv.style.height = H+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  barTop = H*0.135;
-  barBot = H*0.875;
   barX   = W*0.30 - 16;
   barW   = 20;
+  // date header: center it in the space to the right of the bar
+  const dh = document.getElementById('dateHead');
+  dh.style.left  = (barX + barW + 8) + 'px';
+  dh.style.right = '0px';
+  // anchor the bar below the actual rendered header (robust across browsers),
+  // with a top minimum that leaves room for the zoom buttons
+  const r = dh.getBoundingClientRect();
+  barTop = Math.max(r.bottom + 18, r.top + 84);
+  barBot = H - 96;
 }
 window.addEventListener('resize', ()=>{ layout(); });
 
@@ -292,52 +310,62 @@ function draw(){
 
   const slice = effSliceTime();
   const sliceY = clamp(timeToY(slice), barTop, barBot);
+  const atNow = (!state.detached) || state.snappedNow;
 
-  // solid "now" time-line (only when detached & today, so it's distinct from the slice cursor)
-  if(state.detached && isToday()){
+  // time-line (current time) — only when the slice line is detached away from now
+  if(state.detached && !state.snappedNow && isToday()){
     const ny = timeToY(currentMinutes());
     if(ny>=barTop && ny<=barBot){
       ctx.strokeStyle = COLORS.timeline;
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath(); ctx.moveTo(barX-barW/2, ny); ctx.lineTo(W*0.62, ny); ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(barX-16, ny); ctx.lineTo(barX+16, ny); ctx.stroke();
+      // current time, in the hash column, on an opaque frame that masks the ticks
+      if(!state.minimal){
+        ctx.font = '300 13px "IBM Plex Mono",monospace';
+        ctx.textAlign = 'left';
+        const txt = fmtCornerLine(currentMinutes());
+        const tw = ctx.measureText(txt).width;
+        ctx.fillStyle = COLORS.bg;
+        ctx.fillRect(12, ny-9, tw+8, 18);
+        ctx.fillStyle = COLORS.label;
+        ctx.fillText(txt, 16, ny+4);
+      }
     }
   }
 
-  // the slice cursor line (solid when attached to now, dashed when detached)
+  // the slice cursor line (solid at now, dashed when detached elsewhere), 1px, clear of the hashes
   const flashing = (performance.now()-state.flashStart) < 1000;
   let lineColor = COLORS.slice;
   if(flashing){
-    const t = (performance.now()-state.flashStart)/1000; // 0..1
-    // red for first half, fade back over second half
-    const k = t<0.5 ? 1 : 1-((t-0.5)/0.5);
+    const ft = (performance.now()-state.flashStart)/1000;
+    const k = ft<0.5 ? 1 : 1-((ft-0.5)/0.5);
     lineColor = mix(COLORS.slice, COLORS.red, k);
   }
   ctx.strokeStyle = lineColor;
-  ctx.lineWidth = 2;
-  ctx.setLineDash(state.detached ? [7,7] : []);
-  ctx.beginPath(); ctx.moveTo(W*0.03, sliceY); ctx.lineTo(W*0.97, sliceY); ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.setLineDash(atNow ? [] : [7,7]);
+  ctx.beginPath(); ctx.moveTo(hashRight(), sliceY); ctx.lineTo(W*0.97, sliceY); ctx.stroke();
   ctx.setLineDash([]);
 
-  // snap dot
-  const snap = nearestSnap(slice);
-  if(state.dragging && snap!=null){
+  // snap dot on a nearby anchor while dragging
+  const snapA = nearestAnchor(slice);
+  if(state.dragging && snapA!=null){
     ctx.fillStyle = COLORS.red;
-    ctx.beginPath(); ctx.arc(barX, timeToY(snap), 7, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(barX, timeToY(snapA), 6, 0, Math.PI*2); ctx.fill();
   }
 
-  // big time + small AM/PM + word, right side, hugging the slice line
+  // big time + small AM/PM + word; time digits and word share one right edge
   const tp = fmt12(slice);
+  const RE = W*0.90;
   ctx.fillStyle = COLORS.text;
   ctx.textAlign = 'right';
-  ctx.font = '400 18px "IBM Plex Mono",monospace';
-  const apW = ctx.measureText(tp.ap).width;
-  ctx.fillText(tp.ap, W*0.94, sliceY-14);
   ctx.font = '400 44px "IBM Plex Mono",monospace';
-  ctx.fillText(tp.hm, W*0.94 - apW - 8, sliceY-14);
+  ctx.fillText(tp.hm, RE, sliceY-14);
   ctx.font = '400 40px "IBM Plex Mono",monospace';
-  ctx.fillText(state.dragging?'drag':'slice', W*0.94, sliceY+38);
+  ctx.fillText(state.dragging?'drag':'slice', RE, sliceY+38);
+  ctx.textAlign = 'left';
+  ctx.font = '400 14px "IBM Plex Mono",monospace';
+  ctx.fillText(tp.ap, RE + 5, sliceY-30);
 }
 
 function mix(a,b,k){
@@ -353,12 +381,10 @@ function parseHex(h){
 }
 
 /* ---------- snapping ---------- */
-function nearestSnap(t){
-  const cands = [...anchors()];
-  if(isToday()) cands.push(currentMinutes());
-  let best=null, bestPx=SNAP_PX;
+function nearestAnchor(t){
   const ty = timeToY(t);
-  for(const c of cands){
+  let best=null, bestPx=SNAP_PX;
+  for(const c of anchors()){
     const px = Math.abs(timeToY(c)-ty);
     if(px<bestPx){ bestPx=px; best=c; }
   }
@@ -366,43 +392,55 @@ function nearestSnap(t){
 }
 
 /* ---------- pointer / gestures ---------- */
+const DRAG_OFFSET = 26;      // slice line sits above the finger so the word 'slice' is under it
 const pointers = new Map();
 let gesture = null;          // 'drag' | 'pinch' | 'scroll' | null
-let downInfo = null;         // for tap detection
+let downInfo = null;
 let pinchStart = null;
 let scrollStart = null;
 
-// the left tick column scrolls the time window
+function hashRight(){ return W*0.09 + 22; }                                  // right edge of the tick column
 function inHashZone(x,y){ return x < (barX - barW) && y >= barTop && y <= barBot; }
+function onBar(x,y){ return x>=barX-barW && x<=barX+barW && y>=barTop && y<=barBot; }
 
 const stage = document.getElementById('stage');
+
+function doScroll(e){
+  const span = state.winEnd - state.winStart;
+  let ws = clamp(scrollStart.winStart - (e.clientY - scrollStart.y)/(barBot-barTop)*span, 0, DAY_MIN-span);
+  state.winStart = ws; state.winEnd = ws+span;
+}
 
 stage.addEventListener('pointerdown', e=>{
   stage.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
 
   if(pointers.size===2){
-    // begin pinch
     const pts = [...pointers.values()];
     const dist = Math.abs(pts[0].y - pts[1].y) || 1;
     const midY = (pts[0].y + pts[1].y)/2;
     pinchStart = { dist, span: state.winEnd-state.winStart, midTime: yToTime(midY), midY };
-    gesture = 'pinch';
-    state.dragging = false;
-    downInfo = null;
-    scrollStart = null;
+    gesture = 'pinch'; state.dragging = false; downInfo = null; scrollStart = null;
     return;
   }
 
-  // single pointer
-  if(inHashZone(e.clientX, e.clientY)){
-    gesture = 'scroll';
-    scrollStart = { y:e.clientY, winStart:state.winStart };
-    downInfo = null;
-    return;
+  const x=e.clientX, y=e.clientY;
+  const sy = clamp(timeToY(effSliceTime()), barTop, barBot);
+  const onSliceRow = Math.abs(y - sy) <= 44 && x > hashRight();
+  const nowY = (state.detached && !state.snappedNow && isToday()) ? timeToY(currentMinutes()) : null;
+  const onNowLine = nowY!=null && Math.abs(y - nowY) <= 18 && x < W*0.62;
+
+  if(onSliceRow){
+    downInfo = { x, y, t:performance.now(), moved:false, mode:'slice' }; gesture = null;
+  } else if(onNowLine){
+    // tap → reattach to now; drag → scroll the window
+    downInfo = { x, y, t:performance.now(), moved:false, mode:'nowline' };
+    scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+  } else if(inHashZone(x,y) || onBar(x,y)){
+    gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
+  } else {
+    downInfo = { x, y, t:performance.now(), moved:false, mode:'none' }; gesture = null;
   }
-  downInfo = { x:e.clientX, y:e.clientY, t:performance.now(), moved:false };
-  gesture = null;
 }, {passive:false});
 
 stage.addEventListener('pointermove', e=>{
@@ -414,49 +452,47 @@ stage.addEventListener('pointermove', e=>{
   if(gesture==='pinch' && pointers.size>=2){
     const pts = [...pointers.values()];
     const dist = Math.abs(pts[0].y - pts[1].y) || 1;
-    let span = pinchStart.span * (pinchStart.dist / dist);
-    span = clamp(span, MIN_SPAN, DAY_MIN);
-    // keep the pinch midpoint time under the same screen y
+    let span = clamp(pinchStart.span * (pinchStart.dist / dist), MIN_SPAN, DAY_MIN);
     const frac = (pinchStart.midY - barTop)/(barBot-barTop);
-    let ws = pinchStart.midTime - frac*span;
-    ws = clamp(ws, 0, DAY_MIN-span);
+    let ws = clamp(pinchStart.midTime - frac*span, 0, DAY_MIN-span);
     state.winStart = ws; state.winEnd = ws+span;
     return;
   }
 
-  if(gesture==='scroll' && scrollStart){
-    const span = state.winEnd - state.winStart;
-    let ws = clamp(scrollStart.winStart - (e.clientY - scrollStart.y)/(barBot-barTop)*span, 0, DAY_MIN-span);
-    state.winStart = ws; state.winEnd = ws+span;
-    return;
-  }
+  if(gesture==='scroll' && scrollStart){ doScroll(e); return; }
 
   if(downInfo){
-    const dy = e.clientY - downInfo.y;
-    const dx = e.clientX - downInfo.x;
-    if(!downInfo.moved && Math.hypot(dx,dy) > 6){
-      downInfo.moved = true;
-      gesture = 'drag';
-      state.dragging = true;
-      state.detached = true;
+    const dist = Math.hypot(e.clientX-downInfo.x, e.clientY-downInfo.y);
+
+    if(downInfo.mode==='nowline'){
+      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
+      if(gesture==='scroll') doScroll(e);
+      return;
     }
+    if(downInfo.mode==='none') return;
+
+    // mode 'slice'
+    if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='drag'; state.dragging=true; state.detached=true; }
     if(gesture==='drag'){
-      let t = yToTime(e.clientY);
-      // edge-scroll: dragging past top/bottom pans the window
       const span = state.winEnd - state.winStart;
-      if(e.clientY < barTop){
-        const over = (barTop - e.clientY);
-        let ws = clamp(state.winStart - over*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
+      const lineY = e.clientY - DRAG_OFFSET;       // keep the word 'slice' under the finger
+      if(lineY < barTop){
+        let ws = clamp(state.winStart - (barTop-lineY)*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
         state.winStart = ws; state.winEnd = ws+span;
-      } else if(e.clientY > barBot){
-        const over = (e.clientY - barBot);
-        let ws = clamp(state.winStart + over*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
+      } else if(lineY > barBot){
+        let ws = clamp(state.winStart + (lineY-barBot)*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
         state.winStart = ws; state.winEnd = ws+span;
       }
-      t = yToTime(clamp(e.clientY, barTop, barBot));
-      // snap, else round to 5 min
-      const snap = nearestSnap(t);
-      state.sliceTime = (snap!=null) ? snap : Math.round(t/SNAP_MIN)*SNAP_MIN;
+      const ay = clamp(lineY, barTop, barBot);
+      const t = yToTime(ay);
+      const nowM = isToday() ? currentMinutes() : null;
+      if(nowM!=null && Math.abs(timeToY(nowM)-ay) <= SNAP_PX){
+        state.snappedNow = true; state.sliceTime = nowM;     // snapped onto the time-line
+      } else {
+        state.snappedNow = false;
+        const snap = nearestAnchor(t);
+        state.sliceTime = (snap!=null) ? snap : Math.round(t/SNAP_MIN)*SNAP_MIN;
+      }
       state.sliceTime = clamp(state.sliceTime, 0, DAY_MIN);
     }
   }
@@ -468,7 +504,6 @@ function endPointer(e){
   if(gesture==='pinch'){
     if(pointers.size<2){
       gesture=null; pinchStart=null;
-      // recenter slice line if it's out of view
       const sy = timeToY(effSliceTime());
       if(sy<barTop || sy>barBot){
         const span = state.winEnd-state.winStart;
@@ -480,15 +515,23 @@ function endPointer(e){
     return;
   }
 
+  if(gesture==='scroll'){ save(); state.dragging=false; gesture=null; downInfo=null; scrollStart=null; return; }
+
   if(downInfo && !downInfo.moved){
-    // a tap → slice at the current slice line position
-    doSlice();
+    if(downInfo.mode==='nowline'){
+      state.detached=false; state.sliceTime=null; state.snappedNow=false;   // tap time-line → reattach
+    } else if(downInfo.mode==='slice'){
+      doSlice();
+    }
   }
 
-  if(gesture==='scroll'){ save(); }
-  if(gesture==='drag') save();
-  state.dragging=false;
-  gesture=null; downInfo=null; scrollStart=null;
+  if(gesture==='drag'){
+    if(state.snappedNow){ state.detached=false; state.sliceTime=null; }      // released while snapped to now → follow now
+    state.snappedNow=false;
+    save();
+  }
+
+  state.dragging=false; gesture=null; downInfo=null; scrollStart=null;
 }
 stage.addEventListener('pointerup', endPointer, {passive:false});
 stage.addEventListener('pointercancel', endPointer, {passive:false});
@@ -519,8 +562,18 @@ document.getElementById('hamb').addEventListener('click', ()=>{ syncToggles(); s
 document.getElementById('sheetClose').addEventListener('click', ()=> sheet.classList.remove('open'));
 function syncToggles(){ document.getElementById('tglMinimal').classList.toggle('on', state.minimal); }
 document.getElementById('tglMinimal').addEventListener('click', ()=>{ state.minimal=!state.minimal; syncToggles(); save(); });
-document.getElementById('btnReset').addEventListener('click', ()=>{ state.detached=false; state.sliceTime=null; sheet.classList.remove('open'); });
+document.getElementById('btnReset').addEventListener('click', ()=>{ state.detached=false; state.sliceTime=null; state.snappedNow=false; sheet.classList.remove('open'); });
 document.getElementById('btnClear').addEventListener('click', ()=>{ state.anchorsByDay[dayKey(state.date)]=[]; save(); sheet.classList.remove('open'); });
+
+/* ---------- zoom control (desktop) ---------- */
+function zoomBy(f){
+  const center = (state.winStart+state.winEnd)/2;
+  let span = clamp((state.winEnd-state.winStart)*f, MIN_SPAN, DAY_MIN);
+  let ws = clamp(center - span/2, 0, DAY_MIN-span);
+  state.winStart = ws; state.winEnd = ws+span; save();
+}
+document.getElementById('zoomIn').addEventListener('click', ()=> zoomBy(0.7));
+document.getElementById('zoomOut').addEventListener('click', ()=> zoomBy(1/0.7));
 
 /* ---------- boot ---------- */
 load();
