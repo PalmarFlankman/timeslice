@@ -7,14 +7,14 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TimeSlice">
-<meta name="theme-color" content="#2f4d33">
+<meta name="theme-color" content="#0d2117">
 <title>TimeSlice</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#2f4d33;
+  --bg:#0d2117;
   --text:#bfe3b5;
   --dim:#7ba081;
   --timeline:#dcefd2;
@@ -53,14 +53,14 @@ body{
 }
 #hamb i{display:block;height:0;border-top:2.5px solid var(--dim);border-radius:2px;}
 #hamb i:nth-child(1){width:26px;}
-#hamb i:nth-child(2){width:18px;}
+#hamb i:nth-child(2){width:26px;}
 #hamb i:nth-child(3){width:26px;}
 #hamb:active i{border-color:var(--text);}
 
 /* settings sheet */
 #sheet{
   position:absolute;left:0;right:0;bottom:0;
-  background:rgba(20,38,24,0.97);
+  background:rgba(20,44,30,0.97);
   border-top:1px solid rgba(191,227,181,0.2);
   border-radius:18px 18px 0 0;
   padding:20px 22px calc(env(safe-area-inset-bottom,0) + 28px);
@@ -138,8 +138,8 @@ const cv = document.getElementById('bar');
 const ctx = cv.getContext('2d');
 
 const COLORS = {
-  bg:       '#2f4d33',
-  ghost:    'rgba(186,222,176,0.16)', // bare interval pill
+  bg:       '#0d2117',
+  ghost:    'rgba(186,222,176,0.20)', // bare interval pill
   ghostGap: 'rgba(186,222,176,0.05)',
   tick:     'rgba(186,222,176,0.30)',
   tickMin:  'rgba(186,222,176,0.16)',
@@ -374,7 +374,8 @@ function draw(){
   ctx.font = '400 44px "IBM Plex Mono",monospace';
   ctx.fillText(tp.hm, RE, sliceY-14);
   ctx.font = '400 40px "IBM Plex Mono",monospace';
-  ctx.fillText(state.dragging?'drag':'slice', RE, sliceY+38);
+  const dotOn = state.dragDot && performance.now() < state.dragDot.until;
+  ctx.fillText((state.dragging||dotOn)?'drag':'slice', RE, sliceY+38);
   ctx.textAlign = 'left';
   ctx.font = '400 14px "IBM Plex Mono",monospace';
   ctx.fillText(tp.ap, RE + 5, sliceY-30);
@@ -414,6 +415,7 @@ let scrollStart = null;
 let anchorIdx = -1;          // index of the anchor being dragged
 
 function hashRight(){ return W*0.09 + 22; }   // right edge of the tick column
+function onBar(x,y){ return x>=barX-barW && x<=barX+barW && y>=barTop && y<=barBot; }
 
 const stage = document.getElementById('stage');
 
@@ -458,6 +460,9 @@ stage.addEventListener('pointerdown', e=>{
   } else if(onNowLine){
     downInfo = { x, y, t:performance.now(), moved:false, mode:'nowline' };
     scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+  } else if(onBar(x,y)){
+    downInfo = { x, y, t:performance.now(), moved:false, mode:'bartap' };
+    scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
   } else {
     // dragging anywhere else scrolls the time window
     gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
@@ -486,6 +491,12 @@ stage.addEventListener('pointermove', e=>{
     const dist = Math.hypot(e.clientX-downInfo.x, e.clientY-downInfo.y);
 
     if(downInfo.mode==='nowline'){
+      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
+      if(gesture==='scroll') doScroll(e);
+      return;
+    }
+
+    if(downInfo.mode==='bartap'){
       if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
       if(gesture==='scroll') doScroll(e);
       return;
@@ -567,6 +578,15 @@ function endPointer(e){
   if(downInfo && !downInfo.moved){
     if(downInfo.mode==='nowline'){
       state.detached=false; state.sliceTime=null; state.snappedNow=false;   // tap time-line → reattach
+    } else if(downInfo.mode==='bartap'){
+      const yy = clamp(downInfo.y, barTop, barBot);
+      const nowM = isToday() ? currentMinutes() : null;
+      if(nowM!=null && Math.abs(timeToY(nowM)-yy) <= SNAP_PX){
+        state.detached=false; state.sliceTime=null; state.snappedNow=false; // tapped near now → reattach
+      } else {
+        state.detached=true; state.snappedNow=false;
+        state.sliceTime = clamp(Math.round(yToTime(yy)/SNAP_MIN)*SNAP_MIN, 0, DAY_MIN);
+      }
     } else if(downInfo.mode==='slice'){
       doSlice();
     }
