@@ -191,7 +191,7 @@ function layout(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   barTop = H*0.135;
   barBot = H*0.875;
-  barX   = W*0.30;
+  barX   = W*0.30 - 16;
   barW   = 20;
 }
 window.addEventListener('resize', ()=>{ layout(); });
@@ -210,17 +210,15 @@ function effSliceTime(){
 }
 
 /* ---------- formatting ---------- */
-function fmtBig(mins){
-  let m = Math.round(mins);
-  m = ((m%DAY_MIN)+DAY_MIN)%DAY_MIN;
-  const h = Math.floor(m/60), mm = m%60;
-  return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');
-}
-function fmtCorner(mins){
+function fmt12(mins){
   let m = ((Math.round(mins)%DAY_MIN)+DAY_MIN)%DAY_MIN;
-  let h = Math.floor(m/60), mm = m%60;
+  const h = Math.floor(m/60), mm = m%60;
   const ap = h<12?'AM':'PM'; let h12 = h%12; if(h12===0) h12=12;
-  return [String(h12).padStart(2,'0'), String(mm).padStart(2,'0'), ap];
+  return { hm: h12+':'+String(mm).padStart(2,'0'), ap };
+}
+function fmtCornerLine(mins){
+  const p = fmt12(mins);
+  return p.hm+' '+p.ap;
 }
 function fmtDate(d){
   const wd = d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase();
@@ -283,18 +281,13 @@ function draw(){
     }
   }
 
-  // corner time labels (top & bottom of bar) — hidden in minimal mode
+  // corner time labels (top & bottom of bar) — single line, clear of the ticks
   if(!state.minimal){
     ctx.fillStyle = COLORS.label;
     ctx.font = '300 13px "IBM Plex Mono",monospace';
     ctx.textAlign = 'left';
-    const drawStack = (parts, cy)=>{
-      ctx.fillText(parts[0], W*0.07, cy-13);
-      ctx.fillText(parts[1], W*0.07, cy);
-      ctx.fillText(parts[2], W*0.07, cy+13);
-    };
-    drawStack(fmtCorner(state.winStart), barTop+4);
-    drawStack(fmtCorner(state.winEnd),   barBot+4);
+    ctx.fillText(fmtCornerLine(state.winStart), 16, barTop-11);
+    ctx.fillText(fmtCornerLine(state.winEnd),   16, barBot+21);
   }
 
   const slice = effSliceTime();
@@ -334,11 +327,15 @@ function draw(){
     ctx.beginPath(); ctx.arc(barX, timeToY(snap), 7, 0, Math.PI*2); ctx.fill();
   }
 
-  // big time + word, right side, hugging the slice line
-  ctx.textAlign = 'right';
+  // big time + small AM/PM + word, right side, hugging the slice line
+  const tp = fmt12(slice);
   ctx.fillStyle = COLORS.text;
+  ctx.textAlign = 'right';
+  ctx.font = '400 18px "IBM Plex Mono",monospace';
+  const apW = ctx.measureText(tp.ap).width;
+  ctx.fillText(tp.ap, W*0.94, sliceY-14);
   ctx.font = '400 44px "IBM Plex Mono",monospace';
-  ctx.fillText(fmtBig(slice), W*0.94, sliceY-14);
+  ctx.fillText(tp.hm, W*0.94 - apW - 8, sliceY-14);
   ctx.font = '400 40px "IBM Plex Mono",monospace';
   ctx.fillText(state.dragging?'drag':'slice', W*0.94, sliceY+38);
 }
@@ -370,9 +367,13 @@ function nearestSnap(t){
 
 /* ---------- pointer / gestures ---------- */
 const pointers = new Map();
-let gesture = null;          // 'drag' | 'pinch' | null
+let gesture = null;          // 'drag' | 'pinch' | 'scroll' | null
 let downInfo = null;         // for tap detection
 let pinchStart = null;
+let scrollStart = null;
+
+// the left tick column scrolls the time window
+function inHashZone(x,y){ return x < (barX - barW) && y >= barTop && y <= barBot; }
 
 const stage = document.getElementById('stage');
 
@@ -389,10 +390,17 @@ stage.addEventListener('pointerdown', e=>{
     gesture = 'pinch';
     state.dragging = false;
     downInfo = null;
+    scrollStart = null;
     return;
   }
 
   // single pointer
+  if(inHashZone(e.clientX, e.clientY)){
+    gesture = 'scroll';
+    scrollStart = { y:e.clientY, winStart:state.winStart };
+    downInfo = null;
+    return;
+  }
   downInfo = { x:e.clientX, y:e.clientY, t:performance.now(), moved:false };
   gesture = null;
 }, {passive:false});
@@ -412,6 +420,13 @@ stage.addEventListener('pointermove', e=>{
     const frac = (pinchStart.midY - barTop)/(barBot-barTop);
     let ws = pinchStart.midTime - frac*span;
     ws = clamp(ws, 0, DAY_MIN-span);
+    state.winStart = ws; state.winEnd = ws+span;
+    return;
+  }
+
+  if(gesture==='scroll' && scrollStart){
+    const span = state.winEnd - state.winStart;
+    let ws = clamp(scrollStart.winStart - (e.clientY - scrollStart.y)/(barBot-barTop)*span, 0, DAY_MIN-span);
     state.winStart = ws; state.winEnd = ws+span;
     return;
   }
@@ -470,9 +485,10 @@ function endPointer(e){
     doSlice();
   }
 
+  if(gesture==='scroll'){ save(); }
   if(gesture==='drag') save();
   state.dragging=false;
-  gesture=null; downInfo=null;
+  gesture=null; downInfo=null; scrollStart=null;
 }
 stage.addEventListener('pointerup', endPointer, {passive:false});
 stage.addEventListener('pointercancel', endPointer, {passive:false});
