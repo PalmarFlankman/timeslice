@@ -37,7 +37,7 @@ body{
 .overlay{position:absolute;pointer-events:none;}
 #dateHead{
   top:env(safe-area-inset-top,0);left:0;right:0;
-  padding-top:18px;
+  padding-top:6px;
   text-align:center;font-size:17px;letter-spacing:2px;font-weight:400;color:var(--dim);
   pointer-events:auto;
 }
@@ -46,6 +46,7 @@ body{
 #dateHead .label{display:inline-block;min-width:150px;}
 
 #hamb{
+  position:absolute;
   right:18px;bottom:calc(env(safe-area-inset-bottom,0) + 20px);
   width:46px;height:40px;pointer-events:auto;cursor:pointer;
   display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:6px;
@@ -80,10 +81,10 @@ body{
 .muted{color:var(--dim);font-size:13px;}
 #sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 
-/* desktop zoom buttons (top-left, above the ticks) */
-#zoom{position:absolute;left:12px;top:calc(env(safe-area-inset-top,0) + 12px);display:flex;gap:6px;pointer-events:auto;z-index:5;}
-#zoom button{width:30px;height:30px;font-family:inherit;font-size:19px;line-height:1;color:var(--dim);background:rgba(191,227,181,0.08);border:1px solid rgba(191,227,181,0.25);border-radius:8px;cursor:pointer;padding:0;}
-#zoom button:active{color:var(--text);background:rgba(191,227,181,0.18);}
+/* desktop zoom buttons — frameless +/- aligned with the date text line */
+#zoom{position:absolute;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
+#zoom button{font-family:inherit;font-size:26px;line-height:26px;height:26px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
+#zoom button:active{color:var(--text);}
 </style>
 </head>
 <body>
@@ -163,6 +164,7 @@ const state = {
   sliceTime: null,        // minutes; null = follows current time
   detached: false,        // true once the user has dragged the slice line away
   snappedNow: false,      // slice line currently snapped onto the now time-line
+  dragDot: null,          // {time, until} red handle that lingers after a drag
   minimal: false,
   flashStart: 0           // timestamp of last slice flash
 };
@@ -296,6 +298,14 @@ function draw(){
       ctx.moveTo(W*0.09, y);
       ctx.lineTo(W*0.09+len, y);
       ctx.stroke();
+      // hour number at the 3-hour marks (3,6,9,12,3,6,9) — skip midnight ends
+      if(h%3===0 && h!==0 && h!==24){
+        let h12 = h%12; if(h12===0) h12=12;
+        ctx.fillStyle = COLORS.tick;
+        ctx.font = '300 13px "IBM Plex Mono",monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(String(h12), 16, y+4);
+      }
     }
   }
 
@@ -327,7 +337,7 @@ function draw(){
         const tw = ctx.measureText(txt).width;
         ctx.fillStyle = COLORS.bg;
         ctx.fillRect(12, ny-9, tw+8, 18);
-        ctx.fillStyle = COLORS.label;
+        ctx.fillStyle = COLORS.timeline;
         ctx.fillText(txt, 16, ny+4);
       }
     }
@@ -347,11 +357,13 @@ function draw(){
   ctx.beginPath(); ctx.moveTo(hashRight(), sliceY); ctx.lineTo(W*0.97, sliceY); ctx.stroke();
   ctx.setLineDash([]);
 
-  // snap dot on a nearby anchor while dragging
-  const snapA = nearestAnchor(slice);
-  if(state.dragging && snapA!=null){
-    ctx.fillStyle = COLORS.red;
-    ctx.beginPath(); ctx.arc(barX, timeToY(snapA), 6, 0, Math.PI*2); ctx.fill();
+  // drag dot — lingers ~2s after release so it can be grabbed to move the anchor
+  if(state.dragDot && performance.now() < state.dragDot.until){
+    const dy = timeToY(state.dragDot.time);
+    if(dy>=barTop && dy<=barBot){
+      ctx.fillStyle = COLORS.red;
+      ctx.beginPath(); ctx.arc(barX, dy, 6, 0, Math.PI*2); ctx.fill();
+    }
   }
 
   // big time + small AM/PM + word; time digits and word share one right edge
@@ -392,16 +404,16 @@ function nearestAnchor(t){
 }
 
 /* ---------- pointer / gestures ---------- */
-const DRAG_OFFSET = 26;      // slice line sits above the finger so the word 'slice' is under it
+const DRAG_OFFSET = 34;      // slice line sits above the finger so the word 'slice' is under it
+const DOT_HOLD = 2000;       // ms the drag dot lingers after release
 const pointers = new Map();
-let gesture = null;          // 'drag' | 'pinch' | 'scroll' | null
+let gesture = null;          // 'drag' | 'anchordrag' | 'pinch' | 'scroll' | null
 let downInfo = null;
 let pinchStart = null;
 let scrollStart = null;
+let anchorIdx = -1;          // index of the anchor being dragged
 
-function hashRight(){ return W*0.09 + 22; }                                  // right edge of the tick column
-function inHashZone(x,y){ return x < (barX - barW) && y >= barTop && y <= barBot; }
-function onBar(x,y){ return x>=barX-barW && x<=barX+barW && y>=barTop && y<=barBot; }
+function hashRight(){ return W*0.09 + 22; }   // right edge of the tick column
 
 const stage = document.getElementById('stage');
 
@@ -410,6 +422,7 @@ function doScroll(e){
   let ws = clamp(scrollStart.winStart - (e.clientY - scrollStart.y)/(barBot-barTop)*span, 0, DAY_MIN-span);
   state.winStart = ws; state.winEnd = ws+span;
 }
+function dotActive(){ return state.dragDot && performance.now() < state.dragDot.until; }
 
 stage.addEventListener('pointerdown', e=>{
   stage.setPointerCapture(e.pointerId);
@@ -425,6 +438,16 @@ stage.addEventListener('pointerdown', e=>{
   }
 
   const x=e.clientX, y=e.clientY;
+
+  // grab the lingering drag dot to move that anchor
+  if(dotActive()){
+    const dy = timeToY(state.dragDot.time);
+    if(Math.hypot(x-barX, y-dy) <= 30){
+      anchorIdx = anchors().findIndex(a=>Math.abs(a-state.dragDot.time)<0.6);
+      if(anchorIdx>=0){ downInfo = { x, y, t:performance.now(), moved:false, mode:'anchor' }; gesture=null; return; }
+    }
+  }
+
   const sy = clamp(timeToY(effSliceTime()), barTop, barBot);
   const onSliceRow = Math.abs(y - sy) <= 44 && x > hashRight();
   const nowY = (state.detached && !state.snappedNow && isToday()) ? timeToY(currentMinutes()) : null;
@@ -433,13 +456,11 @@ stage.addEventListener('pointerdown', e=>{
   if(onSliceRow){
     downInfo = { x, y, t:performance.now(), moved:false, mode:'slice' }; gesture = null;
   } else if(onNowLine){
-    // tap → reattach to now; drag → scroll the window
     downInfo = { x, y, t:performance.now(), moved:false, mode:'nowline' };
     scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
-  } else if(inHashZone(x,y) || onBar(x,y)){
-    gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
   } else {
-    downInfo = { x, y, t:performance.now(), moved:false, mode:'none' }; gesture = null;
+    // dragging anywhere else scrolls the time window
+    gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
   }
 }, {passive:false});
 
@@ -469,7 +490,22 @@ stage.addEventListener('pointermove', e=>{
       if(gesture==='scroll') doScroll(e);
       return;
     }
-    if(downInfo.mode==='none') return;
+
+    if(downInfo.mode==='anchor'){
+      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='anchordrag'; state.dragging=true; }
+      if(gesture==='anchordrag'){
+        const a = anchors();
+        const ay = clamp(e.clientY, barTop, barBot);
+        let t = Math.round(yToTime(ay)/SNAP_MIN)*SNAP_MIN;
+        const lo = (anchorIdx>0 ? a[anchorIdx-1] : 0) + SNAP_MIN;
+        const hi = (anchorIdx<a.length-1 ? a[anchorIdx+1] : DAY_MIN) - SNAP_MIN;
+        t = clamp(t, lo, hi);
+        a[anchorIdx] = t;
+        state.detached = true; state.snappedNow = false; state.sliceTime = t;
+        state.dragDot = { time: t, until: performance.now()+DOT_HOLD };
+      }
+      return;
+    }
 
     // mode 'slice'
     if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='drag'; state.dragging=true; state.detached=true; }
@@ -494,6 +530,11 @@ stage.addEventListener('pointermove', e=>{
         state.sliceTime = (snap!=null) ? snap : Math.round(t/SNAP_MIN)*SNAP_MIN;
       }
       state.sliceTime = clamp(state.sliceTime, 0, DAY_MIN);
+      // sitting on an anchor → arm the drag dot
+      const onA = nearestAnchor(state.sliceTime);
+      if(onA!=null && Math.abs(onA-state.sliceTime)<0.6 && !state.snappedNow){
+        state.dragDot = { time: onA, until: performance.now()+DOT_HOLD };
+      }
     }
   }
 }, {passive:false});
@@ -517,6 +558,12 @@ function endPointer(e){
 
   if(gesture==='scroll'){ save(); state.dragging=false; gesture=null; downInfo=null; scrollStart=null; return; }
 
+  if(gesture==='anchordrag'){
+    anchors().sort((p,q)=>p-q);
+    if(state.dragDot) state.dragDot.until = performance.now()+DOT_HOLD;
+    save(); state.dragging=false; gesture=null; downInfo=null; anchorIdx=-1; return;
+  }
+
   if(downInfo && !downInfo.moved){
     if(downInfo.mode==='nowline'){
       state.detached=false; state.sliceTime=null; state.snappedNow=false;   // tap time-line → reattach
@@ -526,7 +573,8 @@ function endPointer(e){
   }
 
   if(gesture==='drag'){
-    if(state.snappedNow){ state.detached=false; state.sliceTime=null; }      // released while snapped to now → follow now
+    if(state.snappedNow){ state.detached=false; state.sliceTime=null; }              // released at now → follow now
+    else if(state.dragDot){ state.dragDot.until = performance.now()+DOT_HOLD; }      // linger so dot is grabbable
     state.snappedNow=false;
     save();
   }
