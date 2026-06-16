@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TimeSlice">
+<meta name="theme-color" content="#2f4d33">
+<title>TimeSlice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#2f4d33;
+  --text:#bfe3b5;
+  --dim:#7ba081;
+  --timeline:#dcefd2;
+  --red:#ff4133;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;background:var(--bg);}
+body{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;
+  color:var(--text);
+  position:fixed;inset:0;
+  overscroll-behavior:none;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+}
+#stage{position:absolute;inset:0;touch-action:none;}
+#bar{position:absolute;inset:0;display:block;touch-action:none;}
+
+/* DOM overlays */
+.overlay{position:absolute;pointer-events:none;}
+#dateHead{
+  top:env(safe-area-inset-top,0);left:0;right:0;
+  padding-top:18px;
+  text-align:center;font-size:17px;letter-spacing:2px;font-weight:400;color:var(--dim);
+  pointer-events:auto;
+}
+#dateHead .nav{display:inline-block;padding:6px 12px;color:var(--dim);cursor:pointer;}
+#dateHead .nav:active{color:var(--text);}
+#dateHead .label{display:inline-block;min-width:150px;}
+
+#hamb{
+  right:18px;bottom:calc(env(safe-area-inset-bottom,0) + 20px);
+  width:46px;height:40px;pointer-events:auto;cursor:pointer;
+  display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:6px;
+}
+#hamb i{display:block;height:0;border-top:2.5px solid var(--dim);border-radius:2px;}
+#hamb i:nth-child(1){width:26px;}
+#hamb i:nth-child(2){width:18px;}
+#hamb i:nth-child(3){width:26px;}
+#hamb:active i{border-color:var(--text);}
+
+/* settings sheet */
+#sheet{
+  position:absolute;left:0;right:0;bottom:0;
+  background:rgba(20,38,24,0.97);
+  border-top:1px solid rgba(191,227,181,0.2);
+  border-radius:18px 18px 0 0;
+  padding:20px 22px calc(env(safe-area-inset-bottom,0) + 28px);
+  transform:translateY(110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+  z-index:10;
+}
+#sheet.open{transform:translateY(0);}
+#sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
+.row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid rgba(191,227,181,0.12);font-size:15px;}
+.row:first-of-type{border-top:none;}
+.row .sub{font-size:11px;color:var(--dim);margin-top:3px;line-height:1.4;}
+.toggle{width:48px;height:28px;border-radius:14px;background:rgba(191,227,181,0.18);position:relative;flex-shrink:0;cursor:pointer;transition:background .2s;}
+.toggle.on{background:#7fc98a;}
+.toggle b{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--timeline);transition:left .2s;}
+.toggle.on b{left:23px;}
+.ghostbtn{font-family:inherit;font-size:14px;color:var(--text);background:none;border:none;cursor:pointer;padding:0;}
+.ghostbtn:active{color:var(--dim);}
+.muted{color:var(--dim);font-size:13px;}
+#sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bar"></canvas>
+</div>
+
+<div id="dateHead" class="overlay">
+  <span class="nav" id="prevDay">&lt;</span><span class="label" id="dateLabel">—</span><span class="nav" id="nextDay">&gt;</span>
+</div>
+
+<div id="hamb"><i></i><i></i><i></i></div>
+
+<div id="sheet">
+  <span id="sheetClose">&times;</span>
+  <h2>TimeSlice</h2>
+  <div class="row">
+    <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
+    <div class="toggle" id="tglMinimal"><b></b></div>
+  </div>
+  <div class="row">
+    <div>Reset to now<div class="sub">Reattach the slice line to the current time</div></div>
+    <button class="ghostbtn" id="btnReset">Reset</button>
+  </div>
+  <div class="row">
+    <div>Clear today's slices<div class="sub">Remove every anchor on this day</div></div>
+    <button class="ghostbtn" id="btnClear">Clear</button>
+  </div>
+  <div class="row">
+    <div>Export day<div class="sub">Coming next — writes intervals to your calendar</div></div>
+    <span class="muted">soon</span>
+  </div>
+  <div class="row">
+    <div>Colors &amp; calendars<div class="sub">Coming next</div></div>
+    <span class="muted">soon</span>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   TimeSlice v0.1 — core time bar
+   The day is measured in minutes from midnight: 0 .. 1440.
+   ============================================================ */
+
+const cv = document.getElementById('bar');
+const ctx = cv.getContext('2d');
+
+const COLORS = {
+  bg:       '#2f4d33',
+  ghost:    'rgba(186,222,176,0.16)', // bare interval pill
+  ghostGap: 'rgba(186,222,176,0.05)',
+  tick:     'rgba(186,222,176,0.30)',
+  tickMin:  'rgba(186,222,176,0.16)',
+  label:    '#7ba081',
+  text:     '#bfe3b5',
+  timeline: '#dcefd2',  // solid "now" line
+  slice:    '#cfe8c5',  // the movable slice cursor line
+  red:      '#ff4133'
+};
+
+/* ---------- persistent-ish state ---------- */
+const DAY_MIN = 1440;
+const MIN_SPAN = 240;     // 4-hour max zoom
+const SNAP_MIN = 5;       // round dragging to 5-minute steps
+const SNAP_PX  = 14;      // pixel distance to snap onto an anchor / now
+
+const state = {
+  date: new Date(),
+  winStart: 0,            // visible window top (minutes)
+  winEnd: DAY_MIN,        // visible window bottom (minutes)
+  anchorsByDay: {},       // 'YYYY-MM-DD' -> sorted array of minutes
+  sliceTime: null,        // minutes; null = follows current time
+  detached: false,        // true once the user has dragged the slice line away
+  minimal: false,
+  flashStart: 0           // timestamp of last slice flash
+};
+
+function dayKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function anchors(){ const k=dayKey(state.date); return state.anchorsByDay[k] || (state.anchorsByDay[k]=[]); }
+function isToday(){ const n=new Date(); return n.getFullYear()===state.date.getFullYear()&&n.getMonth()===state.date.getMonth()&&n.getDate()===state.date.getDate(); }
+
+/* ---------- storage ---------- */
+function save(){
+  try{
+    localStorage.setItem('ts_state', JSON.stringify({
+      anchorsByDay: state.anchorsByDay,
+      winStart: state.winStart, winEnd: state.winEnd,
+      minimal: state.minimal
+    }));
+  }catch(e){}
+}
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem('ts_state')||'{}');
+    if(s.anchorsByDay) state.anchorsByDay = s.anchorsByDay;
+    if(typeof s.winStart==='number') state.winStart = s.winStart;
+    if(typeof s.winEnd==='number') state.winEnd = s.winEnd;
+    if(typeof s.minimal==='boolean') state.minimal = s.minimal;
+  }catch(e){}
+}
+
+/* ---------- geometry ---------- */
+let W=0,H=0,dpr=1;
+let barTop=0, barBot=0, barX=0, barW=20;
+function layout(){
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W*dpr; cv.height = H*dpr;
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  barTop = H*0.135;
+  barBot = H*0.875;
+  barX   = W*0.30;
+  barW   = 20;
+}
+window.addEventListener('resize', ()=>{ layout(); });
+
+function timeToY(t){ return barTop + (t-state.winStart)/(state.winEnd-state.winStart)*(barBot-barTop); }
+function yToTime(y){ return state.winStart + (y-barTop)/(barBot-barTop)*(state.winEnd-state.winStart); }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+
+function currentMinutes(){
+  const n = new Date();
+  return n.getHours()*60 + n.getMinutes() + n.getSeconds()/60;
+}
+function effSliceTime(){
+  if(state.detached && state.sliceTime!=null) return state.sliceTime;
+  return isToday() ? currentMinutes() : (state.sliceTime!=null?state.sliceTime:DAY_MIN/2);
+}
+
+/* ---------- formatting ---------- */
+function fmtBig(mins){
+  let m = Math.round(mins);
+  m = ((m%DAY_MIN)+DAY_MIN)%DAY_MIN;
+  const h = Math.floor(m/60), mm = m%60;
+  return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
+function fmtCorner(mins){
+  let m = ((Math.round(mins)%DAY_MIN)+DAY_MIN)%DAY_MIN;
+  let h = Math.floor(m/60), mm = m%60;
+  const ap = h<12?'AM':'PM'; let h12 = h%12; if(h12===0) h12=12;
+  return [String(h12).padStart(2,'0'), String(mm).padStart(2,'0'), ap];
+}
+function fmtDate(d){
+  const wd = d.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase();
+  const mo = d.toLocaleDateString('en-US',{month:'short'}).toUpperCase();
+  return wd+' '+mo+' '+d.getDate();
+}
+
+/* ---------- drawing ---------- */
+function roundRect(x,y,w,h,r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  // segments of the whole day, split by anchors
+  const a = anchors();
+  const bounds = [0, ...a, DAY_MIN];
+
+  // pills (clip to bar region)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(barX-barW, barTop-30, barW*2, (barBot-barTop)+60);
+  ctx.clip();
+  for(let i=0;i<bounds.length-1;i++){
+    const s=bounds[i], e=bounds[i+1];
+    let y0=timeToY(s), y1=timeToY(e);
+    if(y1<barTop-30 || y0>barBot+30) continue;
+    const gap = 3;
+    const top = y0+gap, h = (y1-gap)-(top);
+    if(h<=0) continue;
+    ctx.fillStyle = COLORS.ghost;
+    roundRect(barX-barW/2, top, barW, h, barW/2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // ticks (hour marks) — hidden in minimal mode
+  if(!state.minimal){
+    const startH = Math.ceil(state.winStart/60);
+    const endH   = Math.floor(state.winEnd/60);
+    for(let h=startH;h<=endH;h++){
+      const y = timeToY(h*60);
+      if(y<barTop-1||y>barBot+1) continue;
+      const major = (h%6===0);
+      ctx.strokeStyle = major?COLORS.tick:COLORS.tickMin;
+      ctx.lineWidth = major?2:1.5;
+      const len = major?18:12;
+      ctx.beginPath();
+      ctx.moveTo(W*0.09, y);
+      ctx.lineTo(W*0.09+len, y);
+      ctx.stroke();
+    }
+  }
+
+  // corner time labels (top & bottom of bar) — hidden in minimal mode
+  if(!state.minimal){
+    ctx.fillStyle = COLORS.label;
+    ctx.font = '300 13px "IBM Plex Mono",monospace';
+    ctx.textAlign = 'left';
+    const drawStack = (parts, cy)=>{
+      ctx.fillText(parts[0], W*0.07, cy-13);
+      ctx.fillText(parts[1], W*0.07, cy);
+      ctx.fillText(parts[2], W*0.07, cy+13);
+    };
+    drawStack(fmtCorner(state.winStart), barTop+4);
+    drawStack(fmtCorner(state.winEnd),   barBot+4);
+  }
+
+  const slice = effSliceTime();
+  const sliceY = clamp(timeToY(slice), barTop, barBot);
+
+  // solid "now" time-line (only when detached & today, so it's distinct from the slice cursor)
+  if(state.detached && isToday()){
+    const ny = timeToY(currentMinutes());
+    if(ny>=barTop && ny<=barBot){
+      ctx.strokeStyle = COLORS.timeline;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.moveTo(barX-barW/2, ny); ctx.lineTo(W*0.62, ny); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // the slice cursor line (solid when attached to now, dashed when detached)
+  const flashing = (performance.now()-state.flashStart) < 1000;
+  let lineColor = COLORS.slice;
+  if(flashing){
+    const t = (performance.now()-state.flashStart)/1000; // 0..1
+    // red for first half, fade back over second half
+    const k = t<0.5 ? 1 : 1-((t-0.5)/0.5);
+    lineColor = mix(COLORS.slice, COLORS.red, k);
+  }
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.setLineDash(state.detached ? [7,7] : []);
+  ctx.beginPath(); ctx.moveTo(W*0.03, sliceY); ctx.lineTo(W*0.97, sliceY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // snap dot
+  const snap = nearestSnap(slice);
+  if(state.dragging && snap!=null){
+    ctx.fillStyle = COLORS.red;
+    ctx.beginPath(); ctx.arc(barX, timeToY(snap), 7, 0, Math.PI*2); ctx.fill();
+  }
+
+  // big time + word, right side, hugging the slice line
+  ctx.textAlign = 'right';
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '400 44px "IBM Plex Mono",monospace';
+  ctx.fillText(fmtBig(slice), W*0.94, sliceY-14);
+  ctx.font = '400 40px "IBM Plex Mono",monospace';
+  ctx.fillText(state.dragging?'drag':'slice', W*0.94, sliceY+38);
+}
+
+function mix(a,b,k){
+  const pa=parseHex(a), pb=parseHex(b);
+  const r=Math.round(pa[0]+(pb[0]-pa[0])*k);
+  const g=Math.round(pa[1]+(pb[1]-pa[1])*k);
+  const bl=Math.round(pa[2]+(pb[2]-pa[2])*k);
+  return 'rgb('+r+','+g+','+bl+')';
+}
+function parseHex(h){
+  if(h[0]==='#'){const n=parseInt(h.slice(1),16);return [(n>>16)&255,(n>>8)&255,n&255];}
+  const m=h.match(/\d+/g); return [+m[0],+m[1],+m[2]];
+}
+
+/* ---------- snapping ---------- */
+function nearestSnap(t){
+  const cands = [...anchors()];
+  if(isToday()) cands.push(currentMinutes());
+  let best=null, bestPx=SNAP_PX;
+  const ty = timeToY(t);
+  for(const c of cands){
+    const px = Math.abs(timeToY(c)-ty);
+    if(px<bestPx){ bestPx=px; best=c; }
+  }
+  return best;
+}
+
+/* ---------- pointer / gestures ---------- */
+const pointers = new Map();
+let gesture = null;          // 'drag' | 'pinch' | null
+let downInfo = null;         // for tap detection
+let pinchStart = null;
+
+const stage = document.getElementById('stage');
+
+stage.addEventListener('pointerdown', e=>{
+  stage.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+  if(pointers.size===2){
+    // begin pinch
+    const pts = [...pointers.values()];
+    const dist = Math.abs(pts[0].y - pts[1].y) || 1;
+    const midY = (pts[0].y + pts[1].y)/2;
+    pinchStart = { dist, span: state.winEnd-state.winStart, midTime: yToTime(midY), midY };
+    gesture = 'pinch';
+    state.dragging = false;
+    downInfo = null;
+    return;
+  }
+
+  // single pointer
+  downInfo = { x:e.clientX, y:e.clientY, t:performance.now(), moved:false };
+  gesture = null;
+}, {passive:false});
+
+stage.addEventListener('pointermove', e=>{
+  if(!pointers.has(e.pointerId)) return;
+  pointers.get(e.pointerId).x = e.clientX;
+  pointers.get(e.pointerId).y = e.clientY;
+  e.preventDefault();
+
+  if(gesture==='pinch' && pointers.size>=2){
+    const pts = [...pointers.values()];
+    const dist = Math.abs(pts[0].y - pts[1].y) || 1;
+    let span = pinchStart.span * (pinchStart.dist / dist);
+    span = clamp(span, MIN_SPAN, DAY_MIN);
+    // keep the pinch midpoint time under the same screen y
+    const frac = (pinchStart.midY - barTop)/(barBot-barTop);
+    let ws = pinchStart.midTime - frac*span;
+    ws = clamp(ws, 0, DAY_MIN-span);
+    state.winStart = ws; state.winEnd = ws+span;
+    return;
+  }
+
+  if(downInfo){
+    const dy = e.clientY - downInfo.y;
+    const dx = e.clientX - downInfo.x;
+    if(!downInfo.moved && Math.hypot(dx,dy) > 6){
+      downInfo.moved = true;
+      gesture = 'drag';
+      state.dragging = true;
+      state.detached = true;
+    }
+    if(gesture==='drag'){
+      let t = yToTime(e.clientY);
+      // edge-scroll: dragging past top/bottom pans the window
+      const span = state.winEnd - state.winStart;
+      if(e.clientY < barTop){
+        const over = (barTop - e.clientY);
+        let ws = clamp(state.winStart - over*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
+        state.winStart = ws; state.winEnd = ws+span;
+      } else if(e.clientY > barBot){
+        const over = (e.clientY - barBot);
+        let ws = clamp(state.winStart + over*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
+        state.winStart = ws; state.winEnd = ws+span;
+      }
+      t = yToTime(clamp(e.clientY, barTop, barBot));
+      // snap, else round to 5 min
+      const snap = nearestSnap(t);
+      state.sliceTime = (snap!=null) ? snap : Math.round(t/SNAP_MIN)*SNAP_MIN;
+      state.sliceTime = clamp(state.sliceTime, 0, DAY_MIN);
+    }
+  }
+}, {passive:false});
+
+function endPointer(e){
+  if(pointers.has(e.pointerId)) pointers.delete(e.pointerId);
+
+  if(gesture==='pinch'){
+    if(pointers.size<2){
+      gesture=null; pinchStart=null;
+      // recenter slice line if it's out of view
+      const sy = timeToY(effSliceTime());
+      if(sy<barTop || sy>barBot){
+        const span = state.winEnd-state.winStart;
+        let ws = clamp(effSliceTime()-span/2, 0, DAY_MIN-span);
+        state.winStart=ws; state.winEnd=ws+span;
+      }
+      save();
+    }
+    return;
+  }
+
+  if(downInfo && !downInfo.moved){
+    // a tap → slice at the current slice line position
+    doSlice();
+  }
+
+  if(gesture==='drag') save();
+  state.dragging=false;
+  gesture=null; downInfo=null;
+}
+stage.addEventListener('pointerup', endPointer, {passive:false});
+stage.addEventListener('pointercancel', endPointer, {passive:false});
+
+function doSlice(){
+  const t = Math.round(effSliceTime()/SNAP_MIN)*SNAP_MIN;
+  if(t<=0 || t>=DAY_MIN) { state.flashStart = performance.now(); return; }
+  const a = anchors();
+  if(!a.some(x=>Math.abs(x-t)<1)){ a.push(t); a.sort((p,q)=>p-q); }
+  state.flashStart = performance.now();
+  save();
+}
+
+/* ---------- date nav ---------- */
+function setDate(d){
+  state.date = d;
+  state.detached = false; state.sliceTime = null;
+  updateDateLabel();
+  save();
+}
+function updateDateLabel(){ document.getElementById('dateLabel').textContent = fmtDate(state.date); }
+document.getElementById('prevDay').addEventListener('click', ()=>{ const d=new Date(state.date); d.setDate(d.getDate()-1); setDate(d); });
+document.getElementById('nextDay').addEventListener('click', ()=>{ const d=new Date(state.date); d.setDate(d.getDate()+1); setDate(d); });
+
+/* ---------- settings sheet ---------- */
+const sheet = document.getElementById('sheet');
+document.getElementById('hamb').addEventListener('click', ()=>{ syncToggles(); sheet.classList.add('open'); });
+document.getElementById('sheetClose').addEventListener('click', ()=> sheet.classList.remove('open'));
+function syncToggles(){ document.getElementById('tglMinimal').classList.toggle('on', state.minimal); }
+document.getElementById('tglMinimal').addEventListener('click', ()=>{ state.minimal=!state.minimal; syncToggles(); save(); });
+document.getElementById('btnReset').addEventListener('click', ()=>{ state.detached=false; state.sliceTime=null; sheet.classList.remove('open'); });
+document.getElementById('btnClear').addEventListener('click', ()=>{ state.anchorsByDay[dayKey(state.date)]=[]; save(); sheet.classList.remove('open'); });
+
+/* ---------- boot ---------- */
+load();
+layout();
+updateDateLabel();
+document.body.style.background = COLORS.bg;
+(function loop(){ draw(); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>
