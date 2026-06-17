@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="TimeSlice">
 <meta name="theme-color" content="#0d2117">
 <title>TimeSlice</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
@@ -68,6 +69,8 @@ body{
   z-index:10;
 }
 #sheet.open{transform:translateY(0);}
+#gcid{width:100%;background:rgba(0,0,0,0.25);border:1px solid rgba(191,227,181,0.25);border-radius:8px;color:var(--text);font-family:inherit;font-size:12px;padding:8px 10px;}
+#gcid::placeholder{color:var(--dim);opacity:0.6;}
 #sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
 #sheet h2 .ver{text-transform:none;letter-spacing:1px;font-weight:400;color:var(--dim);opacity:0.7;margin-left:8px;}
 .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid rgba(191,227,181,0.12);font-size:15px;}
@@ -135,10 +138,18 @@ body{
       <div>Clear today's slices<div class="sub">Remove every anchor on this day</div></div>
       <button class="ghostbtn" id="btnClear">Clear</button>
     </div>
-    <div class="row">
-      <div>Export day<div class="sub">Coming next — writes intervals to your calendar</div></div>
-      <span class="muted">soon</span>
+    <div class="row" id="authRow">
+      <div style="flex:1">Google account<div class="sub">Needed to write events</div></div>
+      <button class="ghostbtn" id="gconnect">Connect</button>
     </div>
+    <div class="row" id="cidRow">
+      <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="row">
+      <div>Export this day<div class="sub">Write each event to Google Calendar</div></div>
+      <button class="ghostbtn" id="btnExport">Export</button>
+    </div>
+    <div id="expStatus" class="sub" style="margin-top:6px;min-height:16px;"></div>
     <div class="row">
       <div>Colors &amp; calendars<div class="sub">Coming next</div></div>
       <span class="muted">soon</span>
@@ -802,6 +813,97 @@ document.getElementById('tglMinimal').addEventListener('click', ()=>{ state.mini
 document.getElementById('btnReset').addEventListener('click', ()=>{ state.detached=false; state.sliceTime=null; state.snappedNow=false; sheet.classList.remove('open'); });
 document.getElementById('btnClear').addEventListener('click', ()=>{ state.segsByDay[dayKey(state.date)]=[{start:0,end:DAY_MIN,ev:null}]; save(); sheet.classList.remove('open'); });
 
+/* ---------- Google auth + export ---------- */
+const GSCOPE='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events';
+let gtoken=null, gtokenClient=null, gPending=false, gPendingExport=false;
+function gStatus(m,kind){ const s=document.getElementById('expStatus'); if(!s)return; s.textContent=m||''; s.style.color = kind==='err'?'#ff8a6b' : kind==='ok'?'#aede5c' : 'var(--dim)'; }
+function gClearToken(){ localStorage.removeItem('ts_tok'); localStorage.removeItem('ts_exp'); localStorage.removeItem('ts_scope'); gtoken=null; }
+function gAuthedUI(){
+  const on=!!gtoken;
+  const ar=document.getElementById('authRow'), cr=document.getElementById('cidRow');
+  if(ar) ar.style.display = on?'none':'flex';
+  if(cr) cr.style.display = on?'none':'flex';
+  const b=document.getElementById('gconnect'); if(b) b.textContent = on?'Connected':'Connect';
+}
+function gRestore(){
+  const c=localStorage.getItem('ts_cid'); const el=document.getElementById('gcid'); if(c&&el) el.value=c;
+  const t=localStorage.getItem('ts_tok'); const exp=parseInt(localStorage.getItem('ts_exp')||'0',10); const sc=localStorage.getItem('ts_scope');
+  if(t && sc===GSCOPE && Date.now()<exp-60000){ gtoken=t; }
+  gAuthedUI();
+}
+function gBuildClient(cid){
+  return google.accounts.oauth2.initTokenClient({
+    client_id:cid, scope:GSCOPE,
+    callback:(resp)=>{
+      if(resp&&resp.access_token){
+        gtoken=resp.access_token;
+        localStorage.setItem('ts_tok',gtoken);
+        localStorage.setItem('ts_exp',String(Date.now()+(parseInt(resp.expires_in||'3600',10))*1000));
+        localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
+        gAuthedUI(); gStatus('Connected.','ok');
+        if(gPendingExport){ gPendingExport=false; exportDay(); }
+      } else gStatus('Sign-in did not complete.','err');
+    },
+    error_callback:(err)=>{
+      if(gPending){ gPending=false; try{ gtokenClient.requestAccessToken({prompt:'consent'}); }catch(e){ gStatus('Sign-in error — try again.','err'); } }
+      else { const t=(err&&err.type)||''; gStatus(t==='popup_closed'?'Sign-in window closed.':t==='popup_failed_to_open'?'Popup blocked — allow popups and retry.':'Sign-in could not complete.','err'); }
+    }
+  });
+}
+function gConnect(){
+  const cid=(document.getElementById('gcid').value||'').trim();
+  if(!cid){ gStatus('Enter your Client ID first.','err'); return; }
+  localStorage.setItem('ts_cid',cid);
+  if(typeof google==='undefined' || !google.accounts || !google.accounts.oauth2){ gStatus('Google sign-in still loading — try again.','err'); return; }
+  if(!gtokenClient || gtokenClient._cid!==cid){ gtokenClient=gBuildClient(cid); gtokenClient._cid=cid; }
+  gStatus('Connecting…');
+  if(localStorage.getItem('ts_granted')==='1'){ gPending=true; gtokenClient.requestAccessToken({prompt:''}); }
+  else gtokenClient.requestAccessToken({prompt:'consent'});
+}
+async function gListCalMap(){
+  const res=await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=100',{headers:{Authorization:'Bearer '+gtoken}});
+  if(res.status===401){ gClearToken(); gAuthedUI(); throw new Error('Session expired — Connect again.'); }
+  if(!res.ok) throw new Error('calendarList '+res.status);
+  const data=await res.json();
+  const map={}; (data.items||[]).forEach(c=>{ map[c.summary]=c.id; });
+  return map;
+}
+function pad2(n){ return String(n).padStart(2,'0'); }
+function hhmm(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
+async function exportDay(){
+  if(!gtoken){ gPendingExport=true; gConnect(); return; }
+  const segs=daySegs().filter(s=>s.ev);
+  if(!segs.length){ gStatus('No events on this day to export.','err'); return; }
+  const btn=document.getElementById('btnExport'); btn.disabled=true; gStatus('Resolving calendars…');
+  try{
+    const calMap=await gListCalMap();
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const baseKey=dayKey(state.date);
+    let ok=0, fail=0, skip=0;
+    for(const sg of segs){
+      const div=CONFIG.divisions[sg.ev.divIdx];
+      const calId=div ? calMap[div.calId] : null;
+      if(!calId){ skip++; continue; }
+      const tag=buildTag(sg.ev.divIdx, sg.ev.cat, sg.ev.sub);
+      const description=[tag, sg.ev.note].filter(Boolean).join('\n');
+      const summary=sg.ev.title || sg.ev.sub || sg.ev.cat || '(untitled)';
+      const startISO=baseKey+'T'+hhmm(sg.start)+':00';
+      let endISO;
+      if(sg.end>=DAY_MIN){ const d=new Date(state.date); d.setDate(d.getDate()+1); endISO=dayKey(d)+'T00:00:00'; }
+      else endISO=baseKey+'T'+hhmm(sg.end)+':00';
+      const body={summary,description,start:{dateTime:startISO,timeZone:tz},end:{dateTime:endISO,timeZone:tz}};
+      gStatus('Creating '+(ok+fail+1)+'/'+segs.length+'…');
+      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)+'/events',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('Session expired mid-export — Connect again.'); }
+      if(r.ok) ok++; else fail++;
+    }
+    gStatus('✓ '+ok+' created'+(fail?(', '+fail+' failed'):'')+(skip?(', '+skip+' had no matching calendar'):''), (fail||skip)?'err':'ok');
+  }catch(e){ gStatus(e.message,'err'); }
+  finally{ btn.disabled=false; }
+}
+document.getElementById('gconnect').addEventListener('click', gConnect);
+document.getElementById('btnExport').addEventListener('click', exportDay);
+
 /* ---------- zoom control (desktop) ---------- */
 function zoomBy(f){
   const center = (state.winStart+state.winEnd)/2;
@@ -884,6 +986,7 @@ ed('edDelete').addEventListener('click', ()=>{ const segs=daySegs(); if(edSegIdx
 /* ---------- boot ---------- */
 load();
 applyMinimal();          // sets zoom visibility + date label, then lays out
+gRestore();              // restore Google auth state if still valid
 document.body.style.background = COLORS.bg;
 setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
