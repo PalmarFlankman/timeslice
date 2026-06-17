@@ -46,8 +46,8 @@ body{
 #dateHead .label{display:inline-block;min-width:150px;}
 
 #hamb{
-  position:absolute;
-  right:18px;bottom:calc(env(safe-area-inset-bottom,0) + 20px);
+  position:fixed;
+  right:16px;bottom:calc(env(safe-area-inset-bottom,0) + 16px);
   width:46px;height:40px;pointer-events:auto;cursor:pointer;
   display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:6px;
 }
@@ -82,7 +82,7 @@ body{
 #sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 
 /* desktop zoom buttons — frameless +/- aligned with the date text line */
-#zoom{position:absolute;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
+#zoom{position:fixed;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
 #zoom button{font-family:inherit;font-size:26px;line-height:26px;height:26px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
 #zoom button:active{color:var(--text);}
 
@@ -306,6 +306,8 @@ function layout(){
   barBot = H - 96;
 }
 window.addEventListener('resize', ()=>{ layout(); });
+window.addEventListener('orientationchange', ()=> setTimeout(layout, 150));
+if(window.visualViewport){ window.visualViewport.addEventListener('resize', layout); }
 
 function timeToY(t){ return barTop + (t-state.winStart)/(state.winEnd-state.winStart)*(barBot-barTop); }
 function yToTime(y){ return state.winStart + (y-barTop)/(barBot-barTop)*(state.winEnd-state.winStart); }
@@ -521,10 +523,12 @@ let downInfo = null;
 let pinchStart = null;
 let scrollStart = null;
 let anchorIdx = -1;          // index of the anchor being dragged
-let pressTimer = null;       // long-press on the bar opens the event editor
+let anchorIdx = -1;          // index of the anchor being dragged
 
 function hashRight(){ return W*0.09 + 22; }   // right edge of the tick column
 function onBar(x,y){ return x>=barX-barW && x<=barX+barW && y>=barTop && y<=barBot; }
+function inHashZone(x,y){ return x < (barX - barW) && y >= barTop && y <= barBot; }
+function resetGestures(){ pointers.clear(); downInfo=null; gesture=null; scrollStart=null; pinchStart=null; anchorIdx=-1; state.dragging=false; }
 
 const stage = document.getElementById('stage');
 
@@ -540,7 +544,6 @@ stage.addEventListener('pointerdown', e=>{
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
 
   if(pointers.size===2){
-    clearTimeout(pressTimer);
     const pts = [...pointers.values()];
     const dist = Math.abs(pts[0].y - pts[1].y) || 1;
     const midY = (pts[0].y + pts[1].y)/2;
@@ -561,27 +564,24 @@ stage.addEventListener('pointerdown', e=>{
   }
 
   const sy = clamp(timeToY(effSliceTime()), barTop, barBot);
-  const onSliceRow = Math.abs(y - sy) <= 44 && x > hashRight();
+  const onSliceRow = Math.abs(y - sy) <= 44 && x > barX+barW;     // the line/text to the right of the bar
   const nowY = (state.detached && !state.snappedNow && isToday()) ? timeToY(currentMinutes()) : null;
   const onNowLine = nowY!=null && Math.abs(y - nowY) <= 18 && x < W*0.62;
 
-  if(onSliceRow){
-    downInfo = { x, y, t:performance.now(), moved:false, mode:'slice' }; gesture = null;
-  } else if(onNowLine){
+  if(onNowLine){
     downInfo = { x, y, t:performance.now(), moved:false, mode:'nowline' };
     scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+  } else if(onSliceRow){
+    downInfo = { x, y, t:performance.now(), moved:false, mode:'slice' }; gesture = null;
   } else if(onBar(x,y)){
+    // tap edits the interval; drag scrolls
     downInfo = { x, y, t:performance.now(), moved:false, mode:'bartap' };
     scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
-    clearTimeout(pressTimer);
-    pressTimer = setTimeout(()=>{
-      if(downInfo && downInfo.mode==='bartap' && !downInfo.moved){
-        downInfo.longfired = true;
-        openEditorForTime(clamp(yToTime(clamp(downInfo.y,barTop,barBot)),0,DAY_MIN));
-      }
-    }, 450);
+  } else if(inHashZone(x,y)){
+    // tap locates the slice line; drag scrolls
+    downInfo = { x, y, t:performance.now(), moved:false, mode:'hashtap' };
+    scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
   } else {
-    // dragging anywhere else scrolls the time window
     gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
   }
 }, {passive:false});
@@ -613,8 +613,8 @@ stage.addEventListener('pointermove', e=>{
       return;
     }
 
-    if(downInfo.mode==='bartap'){
-      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; clearTimeout(pressTimer); }
+    if(downInfo.mode==='bartap' || downInfo.mode==='hashtap'){
+      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
       if(gesture==='scroll') doScroll(e);
       return;
     }
@@ -668,7 +668,6 @@ stage.addEventListener('pointermove', e=>{
 }, {passive:false});
 
 function endPointer(e){
-  clearTimeout(pressTimer);
   if(pointers.has(e.pointerId)) pointers.delete(e.pointerId);
 
   if(gesture==='pinch'){
@@ -697,16 +696,15 @@ function endPointer(e){
     if(downInfo.mode==='nowline'){
       state.detached=false; state.sliceTime=null; state.snappedNow=false;   // tap time-line → reattach
     } else if(downInfo.mode==='bartap'){
-      if(downInfo.longfired){ /* long-press opened the editor; do nothing */ }
-      else {
-        const yy = clamp(downInfo.y, barTop, barBot);
-        const nowM = isToday() ? currentMinutes() : null;
-        if(nowM!=null && Math.abs(timeToY(nowM)-yy) <= SNAP_PX){
-          state.detached=false; state.sliceTime=null; state.snappedNow=false; // tapped near now → reattach
-        } else {
-          state.detached=true; state.snappedNow=false;
-          state.sliceTime = clamp(Math.round(yToTime(yy)/SNAP_MIN)*SNAP_MIN, 0, DAY_MIN);
-        }
+      openEditorForTime(clamp(yToTime(clamp(downInfo.y,barTop,barBot)),0,DAY_MIN));   // tap bar → edit interval
+    } else if(downInfo.mode==='hashtap'){
+      const yy = clamp(downInfo.y, barTop, barBot);
+      const nowM = isToday() ? currentMinutes() : null;
+      if(nowM!=null && Math.abs(timeToY(nowM)-yy) <= SNAP_PX){
+        state.detached=false; state.sliceTime=null; state.snappedNow=false; // near now → reattach
+      } else {
+        state.detached=true; state.snappedNow=false;
+        state.sliceTime = clamp(Math.round(yToTime(yy)/SNAP_MIN)*SNAP_MIN, 0, DAY_MIN);
       }
     } else if(downInfo.mode==='slice'){
       doSlice();
@@ -795,6 +793,7 @@ function updatePreview(){
   ed('edPreview').textContent = (tag||'(no category)') + (note?('\n'+note):'');
 }
 function openEditorForTime(t){
+  resetGestures();
   const iv = intervalAt(t); edStart = iv.start; edEnd = iv.end;
   const ev = events()[edStart] || {};
   const divIdx = (ev.divIdx!=null) ? ev.divIdx : 0;
@@ -835,6 +834,7 @@ load();
 layout();
 updateDateLabel();
 document.body.style.background = COLORS.bg;
+setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
 </script>
 </body>
