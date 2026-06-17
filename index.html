@@ -30,7 +30,7 @@ body{
   touch-action:none;
   -webkit-user-select:none;user-select:none;
 }
-#stage{position:absolute;inset:0;touch-action:none;}
+#stage{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,600px);overflow:hidden;touch-action:none;}
 #bar{position:absolute;inset:0;display:block;touch-action:none;}
 
 /* DOM overlays */
@@ -46,7 +46,7 @@ body{
 #dateHead .label{display:inline-block;min-width:150px;}
 
 #hamb{
-  position:fixed;
+  position:absolute;
   right:16px;bottom:calc(env(safe-area-inset-bottom,0) + 16px);
   width:46px;height:40px;pointer-events:auto;cursor:pointer;
   display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:6px;
@@ -59,15 +59,15 @@ body{
 
 /* settings sheet */
 #sheet{
-  position:absolute;left:0;right:0;bottom:0;
+  position:absolute;left:50%;bottom:0;width:min(100vw,600px);
   background:rgba(20,44,30,0.97);
   border-top:1px solid rgba(191,227,181,0.2);
   border-radius:18px 18px 0 0;
   padding:20px 22px calc(env(safe-area-inset-bottom,0) + 28px);
-  transform:translateY(110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+  transform:translate(-50%,110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
   z-index:10;
 }
-#sheet.open{transform:translateY(0);}
+#sheet.open{transform:translate(-50%,0);}
 #sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
 .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid rgba(191,227,181,0.12);font-size:15px;}
 .row:first-of-type{border-top:none;}
@@ -82,7 +82,7 @@ body{
 #sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 
 /* desktop zoom buttons — frameless +/- aligned with the date text line */
-#zoom{position:fixed;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
+#zoom{position:absolute;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
 #zoom button{font-family:inherit;font-size:26px;line-height:26px;height:26px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
 #zoom button:active{color:var(--text);}
 
@@ -110,17 +110,14 @@ body{
 <body>
 <div id="stage">
   <canvas id="bar"></canvas>
-</div>
-
-<div id="dateHead" class="overlay">
-  <span class="nav" id="prevDay">&lt;</span><span class="label" id="dateLabel">—</span><span class="nav" id="nextDay">&gt;</span>
-</div>
-
-<div id="hamb"><i></i><i></i><i></i></div>
-
-<div id="zoom">
-  <button id="zoomOut" aria-label="Zoom out">&minus;</button>
-  <button id="zoomIn" aria-label="Zoom in">+</button>
+  <div id="dateHead" class="overlay">
+    <span class="nav" id="prevDay">&lt;</span><span class="label" id="dateLabel">—</span><span class="nav" id="nextDay">&gt;</span>
+  </div>
+  <div id="hamb"><i></i><i></i><i></i></div>
+  <div id="zoom">
+    <button id="zoomOut" aria-label="Zoom out">&minus;</button>
+    <button id="zoomIn" aria-label="Zoom in">+</button>
+  </div>
 </div>
 
 <div id="sheet">
@@ -240,8 +237,9 @@ const state = {
   date: new Date(),
   winStart: 0,            // visible window top (minutes)
   winEnd: DAY_MIN,        // visible window bottom (minutes)
-  anchorsByDay: {},       // 'YYYY-MM-DD' -> sorted array of minutes
-  eventsByDay: {},        // 'YYYY-MM-DD' -> { '<startMin>': {title,divIdx,cat,sub,note} }
+  anchorsByDay: {},       // (legacy, kept only for migration)
+  eventsByDay: {},        // (legacy, kept only for migration)
+  segsByDay: {},          // 'YYYY-MM-DD' -> [ {start,end,ev} ] contiguous over 0..1440
   sliceTime: null,        // minutes; null = follows current time
   detached: false,        // true once the user has dragged the slice line away
   snappedNow: false,      // slice line currently snapped onto the now time-line
@@ -251,33 +249,71 @@ const state = {
 };
 
 function dayKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function anchors(){ const k=dayKey(state.date); return state.anchorsByDay[k] || (state.anchorsByDay[k]=[]); }
-function events(){ const k=dayKey(state.date); return state.eventsByDay[k] || (state.eventsByDay[k]={}); }
 function isToday(){ const n=new Date(); return n.getFullYear()===state.date.getFullYear()&&n.getMonth()===state.date.getMonth()&&n.getDate()===state.date.getDate(); }
 
-// the interval [start,end] that contains time t, given the day's anchors
-function intervalAt(t){
-  const b = [0, ...anchors(), DAY_MIN];
-  for(let i=0;i<b.length-1;i++){ if(t>=b[i] && t<b[i+1]) return {start:b[i], end:b[i+1]}; }
-  return {start:b[b.length-2], end:DAY_MIN};
+/* ---------- segment model ----------
+   A day is a contiguous list of segments covering 0..1440. Each segment may carry an event.
+   Anchors are simply the internal boundaries between segments. Moving/deleting a boundary
+   reshapes segments while their event data rides along. */
+function daySegs(){ const k=dayKey(state.date); let d=state.segsByDay[k]; if(!d){ d=[{start:0,end:DAY_MIN,ev:null}]; state.segsByDay[k]=d; } return d; }
+function anchorTimes(){ return daySegs().slice(1).map(s=>s.start); }
+function segIndexAt(t){ const segs=daySegs(); for(let i=0;i<segs.length;i++){ if(t>=segs[i].start && t<segs[i].end) return i; } return segs.length-1; }
+function boundaryNear(t){ const segs=daySegs(); for(let i=1;i<segs.length;i++){ if(Math.abs(segs[i].start-t)<0.6) return i; } return -1; }
+
+function sliceAt(t){
+  t = Math.round(t/SNAP_MIN)*SNAP_MIN;
+  if(t<=0 || t>=DAY_MIN) return false;
+  const segs=daySegs(); const i=segIndexAt(t); const s=segs[i];
+  if(t<=s.start || t>=s.end) return false;                 // already a boundary
+  segs.splice(i,1,
+    {start:s.start, end:t,   ev:s.ev?Object.assign({},s.ev):null},
+    {start:t,       end:s.end, ev:s.ev?Object.assign({},s.ev):null});
+  return true;
+}
+function moveBoundary(bi, t){
+  const segs=daySegs();
+  t = Math.round(t/SNAP_MIN)*SNAP_MIN;
+  const lo = segs[bi-1].start + SNAP_MIN, hi = segs[bi].end - SNAP_MIN;
+  t = clamp(t, lo, hi);
+  segs[bi-1].end = t; segs[bi].start = t;
+  return t;
+}
+function deleteBoundary(bi){
+  const segs=daySegs(); const a=segs[bi-1], b=segs[bi];
+  let ev = null;
+  if(a.ev && b.ev) ev = ((a.end-a.start) >= (b.end-b.start)) ? a.ev : b.ev;  // longer event wins
+  else ev = a.ev || b.ev;                                                     // event fills the interval
+  segs.splice(bi-1, 2, {start:a.start, end:b.end, ev});
 }
 
 /* ---------- storage ---------- */
 function save(){
   try{
     localStorage.setItem('ts_state', JSON.stringify({
-      anchorsByDay: state.anchorsByDay,
-      eventsByDay: state.eventsByDay,
+      segsByDay: state.segsByDay,
       winStart: state.winStart, winEnd: state.winEnd,
       minimal: state.minimal
     }));
   }catch(e){}
 }
+function migrate(s){
+  const out = {};
+  const aDays = s.anchorsByDay||{}, eDays = s.eventsByDay||{};
+  const keys = new Set([...Object.keys(aDays), ...Object.keys(eDays)]);
+  keys.forEach(k=>{
+    const a = (aDays[k]||[]).slice().sort((x,y)=>x-y);
+    const bounds = [0, ...a, DAY_MIN];
+    const ev = eDays[k]||{};
+    const segs = [];
+    for(let i=0;i<bounds.length-1;i++) segs.push({start:bounds[i], end:bounds[i+1], ev:ev[bounds[i]]||null});
+    out[k] = segs;
+  });
+  return out;
+}
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem('ts_state')||'{}');
-    if(s.anchorsByDay) state.anchorsByDay = s.anchorsByDay;
-    if(s.eventsByDay) state.eventsByDay = s.eventsByDay;
+    state.segsByDay = s.segsByDay || migrate(s);
     if(typeof s.winStart==='number') state.winStart = s.winStart;
     if(typeof s.winEnd==='number') state.winEnd = s.winEnd;
     if(typeof s.minimal==='boolean') state.minimal = s.minimal;
@@ -285,11 +321,13 @@ function load(){
 }
 
 /* ---------- geometry ---------- */
-let W=0,H=0,dpr=1;
+let W=0,H=0,dpr=1,originX=0,originY=0;
 let barTop=0, barBot=0, barX=0, barW=20;
 function layout(){
   dpr = window.devicePixelRatio || 1;
-  W = window.innerWidth; H = window.innerHeight;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  W = Math.min(vw, 600); H = vh;
+  originX = (vw - W)/2; originY = 0;        // stage is centered; convert page coords to stage-local
   cv.width = W*dpr; cv.height = H*dpr;
   cv.style.width = W+'px'; cv.style.height = H+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -299,10 +337,9 @@ function layout(){
   const dh = document.getElementById('dateHead');
   dh.style.left  = (barX + barW + 8) + 'px';
   dh.style.right = '0px';
-  // anchor the bar below the actual rendered header (robust across browsers),
-  // with a top minimum that leaves room for the zoom buttons
+  // anchor the bar below the rendered header (stage-local coords)
   const r = dh.getBoundingClientRect();
-  barTop = Math.max(r.bottom + 18, r.top + 84);
+  barTop = Math.max((r.bottom-originY) + 18, (r.top-originY) + 84);
   barBot = H - 96;
 }
 window.addEventListener('resize', ()=>{ layout(); });
@@ -354,25 +391,20 @@ function roundRect(x,y,w,h,r){
 function draw(){
   ctx.clearRect(0,0,W,H);
 
-  // segments of the whole day, split by anchors
-  const a = anchors();
-  const bounds = [0, ...a, DAY_MIN];
+  const segs = daySegs();
 
   // pills (clip to bar region)
-  const evs = events();
   ctx.save();
   ctx.beginPath();
   ctx.rect(barX-barW, barTop-30, barW*2, (barBot-barTop)+60);
   ctx.clip();
-  for(let i=0;i<bounds.length-1;i++){
-    const s=bounds[i], e=bounds[i+1];
-    let y0=timeToY(s), y1=timeToY(e);
+  for(const sg of segs){
+    let y0=timeToY(sg.start), y1=timeToY(sg.end);
     if(y1<barTop-30 || y0>barBot+30) continue;
     const gap = 3;
     const top = y0+gap, h = (y1-gap)-(top);
     if(h<=0) continue;
-    const ev = evs[s];
-    ctx.fillStyle = ev ? (CONFIG.divisions[ev.divIdx] ? CONFIG.divisions[ev.divIdx].color : COLORS.ghost) : COLORS.ghost;
+    ctx.fillStyle = sg.ev ? (CONFIG.divisions[sg.ev.divIdx] ? CONFIG.divisions[sg.ev.divIdx].color : COLORS.ghost) : COLORS.ghost;
     roundRect(barX-barW/2, top, barW, h, barW/2);
     ctx.fill();
   }
@@ -383,12 +415,11 @@ function draw(){
     ctx.font = '300 13px "IBM Plex Mono",monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = COLORS.label;
-    for(let i=0;i<bounds.length-1;i++){
-      const s=bounds[i], e=bounds[i+1];
-      const ev = evs[s]; if(!ev) continue;
-      const y0=Math.max(timeToY(s),barTop), y1=Math.min(timeToY(e),barBot);
+    for(const sg of segs){
+      if(!sg.ev) continue;
+      const y0=Math.max(timeToY(sg.start),barTop), y1=Math.min(timeToY(sg.end),barBot);
       if(y1-y0 < 16) continue;
-      const lbl = ev.sub || ev.cat || ev.title || '';
+      const lbl = sg.ev.sub || sg.ev.cat || sg.ev.title || '';
       if(lbl) ctx.fillText(lbl, barX+barW, (y0+y1)/2+4);
     }
   }
@@ -467,12 +498,19 @@ function draw(){
   ctx.beginPath(); ctx.moveTo(hashRight(), sliceY); ctx.lineTo(W*0.97, sliceY); ctx.stroke();
   ctx.setLineDash([]);
 
-  // drag dot — lingers ~2s after release so it can be grabbed to move the anchor
+  // drag dot — lingers ~2s after release; with a red X delete handle 60px to its right
   if(state.dragDot && performance.now() < state.dragDot.until){
     const dy = timeToY(state.dragDot.time);
     if(dy>=barTop && dy<=barBot){
       ctx.fillStyle = COLORS.red;
       ctx.beginPath(); ctx.arc(barX, dy, 6, 0, Math.PI*2); ctx.fill();
+      // X
+      const xc = barX+60, s=6;
+      ctx.strokeStyle = COLORS.red; ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(xc-s, dy-s); ctx.lineTo(xc+s, dy+s);
+      ctx.moveTo(xc+s, dy-s); ctx.lineTo(xc-s, dy+s);
+      ctx.stroke();
     }
   }
 
@@ -507,7 +545,7 @@ function parseHex(h){
 function nearestAnchor(t){
   const ty = timeToY(t);
   let best=null, bestPx=SNAP_PX;
-  for(const c of anchors()){
+  for(const c of anchorTimes()){
     const px = Math.abs(timeToY(c)-ty);
     if(px<bestPx){ bestPx=px; best=c; }
   }
@@ -531,16 +569,17 @@ function resetGestures(){ pointers.clear(); downInfo=null; gesture=null; scrollS
 
 const stage = document.getElementById('stage');
 
-function doScroll(e){
+function doScroll(ly){
   const span = state.winEnd - state.winStart;
-  let ws = clamp(scrollStart.winStart - (e.clientY - scrollStart.y)/(barBot-barTop)*span, 0, DAY_MIN-span);
+  let ws = clamp(scrollStart.winStart - (ly - scrollStart.y)/(barBot-barTop)*span, 0, DAY_MIN-span);
   state.winStart = ws; state.winEnd = ws+span;
 }
 function dotActive(){ return state.dragDot && performance.now() < state.dragDot.until; }
 
 stage.addEventListener('pointerdown', e=>{
   stage.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  const x = e.clientX - originX, y = e.clientY - originY;
+  pointers.set(e.pointerId, {x, y});
 
   if(pointers.size===2){
     const pts = [...pointers.values()];
@@ -551,14 +590,16 @@ stage.addEventListener('pointerdown', e=>{
     return;
   }
 
-  const x=e.clientX, y=e.clientY;
-
-  // grab the lingering drag dot to move that anchor
+  // when the drag dot is showing: tap its red X to delete the anchor, or grab the dot to move it
   if(dotActive()){
     const dy = timeToY(state.dragDot.time);
+    if(Math.hypot(x-(barX+60), y-dy) <= 22){
+      const bi = boundaryNear(state.dragDot.time);
+      if(bi>=1){ deleteBoundary(bi); state.dragDot=null; resetGestures(); save(); return; }
+    }
     if(Math.hypot(x-barX, y-dy) <= 30){
-      anchorIdx = anchors().findIndex(a=>Math.abs(a-state.dragDot.time)<0.6);
-      if(anchorIdx>=0){ downInfo = { x, y, t:performance.now(), moved:false, mode:'anchor' }; gesture=null; return; }
+      anchorIdx = boundaryNear(state.dragDot.time);
+      if(anchorIdx>=1){ downInfo = { x, y, t:performance.now(), moved:false, mode:'anchor' }; gesture=null; return; }
     }
   }
 
@@ -569,26 +610,25 @@ stage.addEventListener('pointerdown', e=>{
 
   if(onNowLine){
     downInfo = { x, y, t:performance.now(), moved:false, mode:'nowline' };
-    scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+    scrollStart = { y, winStart:state.winStart }; gesture = null;
   } else if(onSliceRow){
     downInfo = { x, y, t:performance.now(), moved:false, mode:'slice' }; gesture = null;
   } else if(onBar(x,y)){
-    // tap edits the interval; drag scrolls
     downInfo = { x, y, t:performance.now(), moved:false, mode:'bartap' };
-    scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+    scrollStart = { y, winStart:state.winStart }; gesture = null;
   } else if(inHashZone(x,y)){
-    // tap locates the slice line; drag scrolls
     downInfo = { x, y, t:performance.now(), moved:false, mode:'hashtap' };
-    scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+    scrollStart = { y, winStart:state.winStart }; gesture = null;
   } else {
-    gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
+    gesture = 'scroll'; scrollStart = { y, winStart:state.winStart }; downInfo = null;
   }
 }, {passive:false});
 
 stage.addEventListener('pointermove', e=>{
   if(!pointers.has(e.pointerId)) return;
-  pointers.get(e.pointerId).x = e.clientX;
-  pointers.get(e.pointerId).y = e.clientY;
+  const x = e.clientX - originX, y = e.clientY - originY;
+  pointers.get(e.pointerId).x = x;
+  pointers.get(e.pointerId).y = y;
   e.preventDefault();
 
   if(gesture==='pinch' && pointers.size>=2){
@@ -601,33 +641,21 @@ stage.addEventListener('pointermove', e=>{
     return;
   }
 
-  if(gesture==='scroll' && scrollStart){ doScroll(e); return; }
+  if(gesture==='scroll' && scrollStart){ doScroll(y); return; }
 
   if(downInfo){
-    const dist = Math.hypot(e.clientX-downInfo.x, e.clientY-downInfo.y);
+    const dist = Math.hypot(x-downInfo.x, y-downInfo.y);
 
-    if(downInfo.mode==='nowline'){
+    if(downInfo.mode==='nowline' || downInfo.mode==='bartap' || downInfo.mode==='hashtap'){
       if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
-      if(gesture==='scroll') doScroll(e);
-      return;
-    }
-
-    if(downInfo.mode==='bartap' || downInfo.mode==='hashtap'){
-      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
-      if(gesture==='scroll') doScroll(e);
+      if(gesture==='scroll') doScroll(y);
       return;
     }
 
     if(downInfo.mode==='anchor'){
       if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='anchordrag'; state.dragging=true; }
       if(gesture==='anchordrag'){
-        const a = anchors();
-        const ay = clamp(e.clientY, barTop, barBot);
-        let t = Math.round(yToTime(ay)/SNAP_MIN)*SNAP_MIN;
-        const lo = (anchorIdx>0 ? a[anchorIdx-1] : 0) + SNAP_MIN;
-        const hi = (anchorIdx<a.length-1 ? a[anchorIdx+1] : DAY_MIN) - SNAP_MIN;
-        t = clamp(t, lo, hi);
-        a[anchorIdx] = t;
+        const t = moveBoundary(anchorIdx, yToTime(clamp(y, barTop, barBot)));
         state.detached = true; state.snappedNow = false; state.sliceTime = t;
         state.dragDot = { time: t, until: performance.now()+DOT_HOLD };
       }
@@ -638,7 +666,7 @@ stage.addEventListener('pointermove', e=>{
     if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='drag'; state.dragging=true; state.detached=true; }
     if(gesture==='drag'){
       const span = state.winEnd - state.winStart;
-      const lineY = e.clientY - DRAG_OFFSET;       // keep the word 'slice' under the finger
+      const lineY = y - DRAG_OFFSET;       // keep the word 'slice' under the finger
       if(lineY < barTop){
         let ws = clamp(state.winStart - (barTop-lineY)*0.4*(span/(barBot-barTop)), 0, DAY_MIN-span);
         state.winStart = ws; state.winEnd = ws+span;
@@ -650,14 +678,13 @@ stage.addEventListener('pointermove', e=>{
       const t = yToTime(ay);
       const nowM = isToday() ? currentMinutes() : null;
       if(nowM!=null && Math.abs(timeToY(nowM)-ay) <= SNAP_PX){
-        state.snappedNow = true; state.sliceTime = nowM;     // snapped onto the time-line
+        state.snappedNow = true; state.sliceTime = nowM;
       } else {
         state.snappedNow = false;
         const snap = nearestAnchor(t);
         state.sliceTime = (snap!=null) ? snap : Math.round(t/SNAP_MIN)*SNAP_MIN;
       }
       state.sliceTime = clamp(state.sliceTime, 0, DAY_MIN);
-      // sitting on an anchor → arm the drag dot
       const onA = nearestAnchor(state.sliceTime);
       if(onA!=null && Math.abs(onA-state.sliceTime)<0.6 && !state.snappedNow){
         state.dragDot = { time: onA, until: performance.now()+DOT_HOLD };
@@ -686,7 +713,6 @@ function endPointer(e){
   if(gesture==='scroll'){ save(); state.dragging=false; gesture=null; downInfo=null; scrollStart=null; return; }
 
   if(gesture==='anchordrag'){
-    anchors().sort((p,q)=>p-q);
     if(state.dragDot) state.dragDot.until = performance.now()+DOT_HOLD;
     save(); state.dragging=false; gesture=null; downInfo=null; anchorIdx=-1; return;
   }
@@ -724,11 +750,8 @@ stage.addEventListener('pointercancel', endPointer, {passive:false});
 
 function doSlice(){
   const t = Math.round(effSliceTime()/SNAP_MIN)*SNAP_MIN;
-  if(t<=0 || t>=DAY_MIN) { state.flashStart = performance.now(); return; }
-  const a = anchors();
-  if(!a.some(x=>Math.abs(x-t)<1)){ a.push(t); a.sort((p,q)=>p-q); }
   state.flashStart = performance.now();
-  save();
+  if(sliceAt(t)) save();
 }
 
 /* ---------- date nav ---------- */
@@ -749,7 +772,7 @@ document.getElementById('sheetClose').addEventListener('click', ()=> sheet.class
 function syncToggles(){ document.getElementById('tglMinimal').classList.toggle('on', state.minimal); }
 document.getElementById('tglMinimal').addEventListener('click', ()=>{ state.minimal=!state.minimal; syncToggles(); save(); });
 document.getElementById('btnReset').addEventListener('click', ()=>{ state.detached=false; state.sliceTime=null; state.snappedNow=false; sheet.classList.remove('open'); });
-document.getElementById('btnClear').addEventListener('click', ()=>{ state.anchorsByDay[dayKey(state.date)]=[]; save(); sheet.classList.remove('open'); });
+document.getElementById('btnClear').addEventListener('click', ()=>{ state.segsByDay[dayKey(state.date)]=[{start:0,end:DAY_MIN,ev:null}]; save(); sheet.classList.remove('open'); });
 
 /* ---------- zoom control (desktop) ---------- */
 function zoomBy(f){
@@ -763,7 +786,7 @@ document.getElementById('zoomOut').addEventListener('click', ()=> zoomBy(1/0.7))
 
 /* ---------- event editor ---------- */
 const ed = id=>document.getElementById(id);
-let edStart=null, edEnd=null;
+let edSegIdx=-1;
 
 function fmtRange(s,e){ const a=fmt12(s), b=fmt12(e); return a.hm+' '+a.ap+' – '+b.hm+' '+b.ap; }
 function populateDivs(sel){
@@ -793,16 +816,17 @@ function updatePreview(){
 }
 function openEditorForTime(t){
   resetGestures();
-  const iv = intervalAt(t); edStart = iv.start; edEnd = iv.end;
-  const ev = events()[edStart] || {};
+  edSegIdx = segIndexAt(t);
+  const seg = daySegs()[edSegIdx];
+  const ev = seg.ev || {};
   const divIdx = (ev.divIdx!=null) ? ev.divIdx : 0;
-  ed('edTime').textContent = fmtRange(edStart, edEnd);
+  ed('edTime').textContent = fmtRange(seg.start, seg.end);
   ed('edTitle').value = ev.title || '';
   populateDivs(divIdx);
   populateCats(divIdx, ev.cat);
   populateSubs(divIdx, ev.cat, ev.sub);
   ed('edNote').value = ev.note || '';
-  ed('edDelete').style.visibility = events()[edStart] ? 'visible' : 'hidden';
+  ed('edDelete').style.visibility = seg.ev ? 'visible' : 'hidden';
   updatePreview();
   ed('editor').classList.add('open');
   ed('editorBack').classList.add('open');
@@ -816,8 +840,9 @@ ed('edNote').addEventListener('input', updatePreview);
 ed('edClose').addEventListener('click', closeEditor);
 ed('editorBack').addEventListener('click', closeEditor);
 ed('edSave').addEventListener('click', ()=>{
-  if(edStart==null) return closeEditor();
-  events()[edStart] = {
+  const segs = daySegs();
+  if(edSegIdx<0 || edSegIdx>=segs.length) return closeEditor();
+  segs[edSegIdx].ev = {
     title: ed('edTitle').value.trim(),
     divIdx: +ed('edDiv').value,
     cat: ed('edCat').value,
@@ -826,7 +851,7 @@ ed('edSave').addEventListener('click', ()=>{
   };
   save(); closeEditor();
 });
-ed('edDelete').addEventListener('click', ()=>{ if(edStart!=null) delete events()[edStart]; save(); closeEditor(); });
+ed('edDelete').addEventListener('click', ()=>{ const segs=daySegs(); if(edSegIdx>=0 && edSegIdx<segs.length) segs[edSegIdx].ev=null; save(); closeEditor(); });
 
 /* ---------- boot ---------- */
 load();
