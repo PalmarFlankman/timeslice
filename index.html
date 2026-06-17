@@ -86,7 +86,7 @@ body{
 #sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 
 /* desktop zoom buttons — frameless +/- aligned with the date text line */
-#zoom{position:absolute;left:14px;top:env(safe-area-inset-top,0);padding-top:6px;display:flex;gap:18px;pointer-events:auto;z-index:5;}
+#zoom{position:absolute;left:30px;top:env(safe-area-inset-top,0);padding-top:6px;display:flex;gap:18px;pointer-events:auto;z-index:5;}
 #zoom button{font-family:inherit;font-size:17px;line-height:normal;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
 #zoom button:active{color:var(--text);}
 
@@ -125,7 +125,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.10</span></h2>
+    <h2>TimeSlice<span class="ver">v1.11</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -355,7 +355,7 @@ function layout(){
   let bt = (r.bottom-originY) + 14;
   if(!state.minimal){
     const zr = document.getElementById('zoom').getBoundingClientRect();
-    bt = Math.max(bt, (zr.bottom-originY) + 32);   // ~12px between zoom and the top time text
+    bt = Math.max(bt, (zr.bottom-originY) + 20);   // ~12px between zoom and the top time label
   }
   barTop = bt;
   barBot = H - 74;
@@ -453,6 +453,7 @@ function draw(){
     for(let h=startH;h<=endH;h++){
       const y = timeToY(h*60);
       if(y<barTop-1||y>barBot+1) continue;
+      if(Math.abs(y-barTop)<3 || Math.abs(y-barBot)<3) continue;  // no end hashes; the corner label sits here
       const major = (h%6===0);
       ctx.strokeStyle = major?COLORS.tick:COLORS.tickMin;
       ctx.lineWidth = major?2:1.5;
@@ -472,13 +473,13 @@ function draw(){
     }
   }
 
-  // corner time labels (top & bottom of bar) — single line, clear of the ticks
+  // corner time labels — centered on the bar ends, where the end hashes used to be
   if(!state.minimal){
     ctx.fillStyle = COLORS.label;
     ctx.font = '300 13px "IBM Plex Mono",monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(fmtCornerLine(state.winStart), 16, barTop-11);
-    ctx.fillText(fmtCornerLine(state.winEnd),   16, barBot+21);
+    ctx.fillText(fmtCornerLine(state.winStart), 16, barTop+4);
+    ctx.fillText(fmtCornerLine(state.winEnd),   16, barBot+4);
   }
 
   const slice = effSliceTime();
