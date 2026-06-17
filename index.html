@@ -85,6 +85,26 @@ body{
 #zoom{position:absolute;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
 #zoom button{font-family:inherit;font-size:26px;line-height:26px;height:26px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
 #zoom button:active{color:var(--text);}
+
+/* event editor */
+#editorBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;}
+#editorBack.open{opacity:1;pointer-events:auto;}
+#editor{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.96);width:min(360px,90vw);
+  background:rgba(20,44,30,0.99);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
+  padding:22px 22px 20px;z-index:21;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;
+  max-height:88vh;overflow:auto;}
+#editor.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
+#edClose{position:absolute;top:12px;right:18px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+#edTime{font-size:16px;color:var(--text);margin-bottom:14px;letter-spacing:1px;}
+#editor label{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:12px 0 5px;}
+#editor input,#editor select,#editor textarea{width:100%;font-family:inherit;font-size:15px;color:var(--text);
+  background:rgba(13,33,23,0.9);border:1px solid rgba(191,227,181,0.22);border-radius:9px;padding:9px 10px;outline:none;-webkit-appearance:none;appearance:none;}
+#editor input:focus,#editor select:focus,#editor textarea:focus{border-color:#7fc98a;}
+#edTitle{margin-bottom:2px;}
+#edPreview{margin-top:14px;font-size:13px;color:#cfe8c5;word-break:break-all;min-height:18px;white-space:pre-wrap;}
+#edBtns{display:flex;justify-content:space-between;align-items:center;margin-top:18px;}
+#edSave{font-family:inherit;font-size:15px;color:#0d2117;background:#aede5c;border:none;border-radius:9px;padding:9px 22px;cursor:pointer;}
+#edSave:active{background:#9bcf4a;}
 </style>
 </head>
 <body>
@@ -128,6 +148,26 @@ body{
   </div>
 </div>
 
+<div id="editorBack"></div>
+<div id="editor">
+  <span id="edClose">&times;</span>
+  <div id="edTime">—</div>
+  <input id="edTitle" type="text" placeholder="event title" autocomplete="off">
+  <label>Calendar</label>
+  <select id="edDiv"></select>
+  <label>Category</label>
+  <select id="edCat"></select>
+  <label>Sub-category</label>
+  <select id="edSub"></select>
+  <label>Note</label>
+  <textarea id="edNote" rows="2" placeholder="note"></textarea>
+  <div id="edPreview"></div>
+  <div id="edBtns">
+    <button id="edDelete" class="ghostbtn">Delete</button>
+    <button id="edSave">Save</button>
+  </div>
+</div>
+
 <script>
 /* ============================================================
    TimeSlice v0.1 — core time bar
@@ -151,6 +191,45 @@ const COLORS = {
   red:      '#ff4133'
 };
 
+/* ---------- config (defaults; later synced from desktop TimeTrap) ---------- */
+const CONFIG = {
+  divisions: [
+    { name:'Admin',     calId:'_Admin',                 prefix:'#AD-', color:'#7fb0e8', tree:[
+      { cat:'Deskwork',  subs:['Email & Bills','Focused Admin','ORKID','Shopping Online','Timesheet'] },
+      { cat:'Planning',  subs:['Family Calendar','ORKID','Trips','Vermont'] },
+      { cat:'Admin',     subs:['Focused Admin'] },
+      { cat:'Housethink',subs:['Shopping Online'] }
+    ]},
+    { name:'Personal',  calId:'_Personal',              prefix:'#EP-', color:'#d9c14a', tree:[
+      { cat:'Argue',       subs:[] },
+      { cat:'Self',        subs:['Routine - Bedtime','Fitness','Meal'] },
+      { cat:'Family Time', subs:[] },
+      { cat:'Social',      subs:['Friend','K','Party / Event','Phonecall'] },
+      { cat:'Project',     subs:['ORKID-TimeTrap'] }
+    ]},
+    { name:'Household', calId:'_Housework & Childcare', prefix:'#CH-', color:'#aede5c', tree:[
+      { cat:'Childcare', subs:['Activities','Afterschool','Appointment','Routine - Bedtime','Routine - Evening','Event','Routine - Morning','Pool','Schoolwork & Practice','Unstructured'] },
+      { cat:'Housework', subs:['Afterschool','Clean & Pickup','Cooking','Errand','Laundry','Pack & Unpack','Repair & Construction'] },
+      { cat:'Driving',   subs:['Trip'] }
+    ]},
+    { name:'Projects',  calId:'_Projects',              prefix:'#PR-', color:'#5fc0a8', tree:[
+      { cat:'VT3',  subs:['Design'] },
+      { cat:'618',  subs:['Financial'] },
+      { cat:'11FR', subs:['Financial'] }
+    ]}
+  ]
+};
+
+// slug() — MUST match desktop exactly so tags re-import cleanly
+function slug(s){ return (s||'').trim().replace(/^#/,'').replace(/\s+/g,'-').replace(/[^\w-]/g,''); }
+function buildTag(divIdx, cat, sub){
+  const d = CONFIG.divisions[divIdx]; if(!d) return '';
+  let t = d.prefix + slug(cat);
+  if(sub) t += '/' + slug(sub);
+  return t;
+}
+function divByName(n){ return CONFIG.divisions.findIndex(d=>d.name===n); }
+
 /* ---------- persistent-ish state ---------- */
 const DAY_MIN = 1440;
 const MIN_SPAN = 240;     // 4-hour max zoom
@@ -162,6 +241,7 @@ const state = {
   winStart: 0,            // visible window top (minutes)
   winEnd: DAY_MIN,        // visible window bottom (minutes)
   anchorsByDay: {},       // 'YYYY-MM-DD' -> sorted array of minutes
+  eventsByDay: {},        // 'YYYY-MM-DD' -> { '<startMin>': {title,divIdx,cat,sub,note} }
   sliceTime: null,        // minutes; null = follows current time
   detached: false,        // true once the user has dragged the slice line away
   snappedNow: false,      // slice line currently snapped onto the now time-line
@@ -172,13 +252,22 @@ const state = {
 
 function dayKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function anchors(){ const k=dayKey(state.date); return state.anchorsByDay[k] || (state.anchorsByDay[k]=[]); }
+function events(){ const k=dayKey(state.date); return state.eventsByDay[k] || (state.eventsByDay[k]={}); }
 function isToday(){ const n=new Date(); return n.getFullYear()===state.date.getFullYear()&&n.getMonth()===state.date.getMonth()&&n.getDate()===state.date.getDate(); }
+
+// the interval [start,end] that contains time t, given the day's anchors
+function intervalAt(t){
+  const b = [0, ...anchors(), DAY_MIN];
+  for(let i=0;i<b.length-1;i++){ if(t>=b[i] && t<b[i+1]) return {start:b[i], end:b[i+1]}; }
+  return {start:b[b.length-2], end:DAY_MIN};
+}
 
 /* ---------- storage ---------- */
 function save(){
   try{
     localStorage.setItem('ts_state', JSON.stringify({
       anchorsByDay: state.anchorsByDay,
+      eventsByDay: state.eventsByDay,
       winStart: state.winStart, winEnd: state.winEnd,
       minimal: state.minimal
     }));
@@ -188,6 +277,7 @@ function load(){
   try{
     const s = JSON.parse(localStorage.getItem('ts_state')||'{}');
     if(s.anchorsByDay) state.anchorsByDay = s.anchorsByDay;
+    if(s.eventsByDay) state.eventsByDay = s.eventsByDay;
     if(typeof s.winStart==='number') state.winStart = s.winStart;
     if(typeof s.winEnd==='number') state.winEnd = s.winEnd;
     if(typeof s.minimal==='boolean') state.minimal = s.minimal;
@@ -267,6 +357,7 @@ function draw(){
   const bounds = [0, ...a, DAY_MIN];
 
   // pills (clip to bar region)
+  const evs = events();
   ctx.save();
   ctx.beginPath();
   ctx.rect(barX-barW, barTop-30, barW*2, (barBot-barTop)+60);
@@ -278,11 +369,27 @@ function draw(){
     const gap = 3;
     const top = y0+gap, h = (y1-gap)-(top);
     if(h<=0) continue;
-    ctx.fillStyle = COLORS.ghost;
+    const ev = evs[s];
+    ctx.fillStyle = ev ? (CONFIG.divisions[ev.divIdx] ? CONFIG.divisions[ev.divIdx].color : COLORS.ghost) : COLORS.ghost;
     roundRect(barX-barW/2, top, barW, h, barW/2);
     ctx.fill();
   }
   ctx.restore();
+
+  // event labels next to the bar — hidden in minimal mode
+  if(!state.minimal){
+    ctx.font = '300 13px "IBM Plex Mono",monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.label;
+    for(let i=0;i<bounds.length-1;i++){
+      const s=bounds[i], e=bounds[i+1];
+      const ev = evs[s]; if(!ev) continue;
+      const y0=Math.max(timeToY(s),barTop), y1=Math.min(timeToY(e),barBot);
+      if(y1-y0 < 16) continue;
+      const lbl = ev.sub || ev.cat || ev.title || '';
+      if(lbl) ctx.fillText(lbl, barX+barW, (y0+y1)/2+4);
+    }
+  }
 
   // ticks (hour marks) — hidden in minimal mode
   if(!state.minimal){
@@ -414,6 +521,7 @@ let downInfo = null;
 let pinchStart = null;
 let scrollStart = null;
 let anchorIdx = -1;          // index of the anchor being dragged
+let pressTimer = null;       // long-press on the bar opens the event editor
 
 function hashRight(){ return W*0.09 + 22; }   // right edge of the tick column
 function onBar(x,y){ return x>=barX-barW && x<=barX+barW && y>=barTop && y<=barBot; }
@@ -432,6 +540,7 @@ stage.addEventListener('pointerdown', e=>{
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
 
   if(pointers.size===2){
+    clearTimeout(pressTimer);
     const pts = [...pointers.values()];
     const dist = Math.abs(pts[0].y - pts[1].y) || 1;
     const midY = (pts[0].y + pts[1].y)/2;
@@ -464,6 +573,13 @@ stage.addEventListener('pointerdown', e=>{
   } else if(onBar(x,y)){
     downInfo = { x, y, t:performance.now(), moved:false, mode:'bartap' };
     scrollStart = { y:e.clientY, winStart:state.winStart }; gesture = null;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(()=>{
+      if(downInfo && downInfo.mode==='bartap' && !downInfo.moved){
+        downInfo.longfired = true;
+        openEditorForTime(clamp(yToTime(clamp(downInfo.y,barTop,barBot)),0,DAY_MIN));
+      }
+    }, 450);
   } else {
     // dragging anywhere else scrolls the time window
     gesture = 'scroll'; scrollStart = { y:e.clientY, winStart:state.winStart }; downInfo = null;
@@ -498,7 +614,7 @@ stage.addEventListener('pointermove', e=>{
     }
 
     if(downInfo.mode==='bartap'){
-      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; }
+      if(!downInfo.moved && dist>6){ downInfo.moved=true; gesture='scroll'; clearTimeout(pressTimer); }
       if(gesture==='scroll') doScroll(e);
       return;
     }
@@ -552,6 +668,7 @@ stage.addEventListener('pointermove', e=>{
 }, {passive:false});
 
 function endPointer(e){
+  clearTimeout(pressTimer);
   if(pointers.has(e.pointerId)) pointers.delete(e.pointerId);
 
   if(gesture==='pinch'){
@@ -580,13 +697,16 @@ function endPointer(e){
     if(downInfo.mode==='nowline'){
       state.detached=false; state.sliceTime=null; state.snappedNow=false;   // tap time-line → reattach
     } else if(downInfo.mode==='bartap'){
-      const yy = clamp(downInfo.y, barTop, barBot);
-      const nowM = isToday() ? currentMinutes() : null;
-      if(nowM!=null && Math.abs(timeToY(nowM)-yy) <= SNAP_PX){
-        state.detached=false; state.sliceTime=null; state.snappedNow=false; // tapped near now → reattach
-      } else {
-        state.detached=true; state.snappedNow=false;
-        state.sliceTime = clamp(Math.round(yToTime(yy)/SNAP_MIN)*SNAP_MIN, 0, DAY_MIN);
+      if(downInfo.longfired){ /* long-press opened the editor; do nothing */ }
+      else {
+        const yy = clamp(downInfo.y, barTop, barBot);
+        const nowM = isToday() ? currentMinutes() : null;
+        if(nowM!=null && Math.abs(timeToY(nowM)-yy) <= SNAP_PX){
+          state.detached=false; state.sliceTime=null; state.snappedNow=false; // tapped near now → reattach
+        } else {
+          state.detached=true; state.snappedNow=false;
+          state.sliceTime = clamp(Math.round(yToTime(yy)/SNAP_MIN)*SNAP_MIN, 0, DAY_MIN);
+        }
       }
     } else if(downInfo.mode==='slice'){
       doSlice();
@@ -643,6 +763,72 @@ function zoomBy(f){
 }
 document.getElementById('zoomIn').addEventListener('click', ()=> zoomBy(0.7));
 document.getElementById('zoomOut').addEventListener('click', ()=> zoomBy(1/0.7));
+
+/* ---------- event editor ---------- */
+const ed = id=>document.getElementById(id);
+let edStart=null, edEnd=null;
+
+function fmtRange(s,e){ const a=fmt12(s), b=fmt12(e); return a.hm+' '+a.ap+' – '+b.hm+' '+b.ap; }
+function populateDivs(sel){
+  const s=ed('edDiv'); s.innerHTML='';
+  CONFIG.divisions.forEach((d,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=d.name; s.appendChild(o); });
+  s.value = sel;
+}
+function populateCats(divIdx, selCat){
+  const s=ed('edCat'); s.innerHTML='';
+  const b=document.createElement('option'); b.value=''; b.textContent='—'; s.appendChild(b);
+  const tree = CONFIG.divisions[divIdx] ? CONFIG.divisions[divIdx].tree : [];
+  tree.forEach(c=>{ const o=document.createElement('option'); o.value=c.cat; o.textContent=c.cat; s.appendChild(o); });
+  s.value = selCat||'';
+}
+function populateSubs(divIdx, cat, selSub){
+  const s=ed('edSub'); s.innerHTML='';
+  const b=document.createElement('option'); b.value=''; b.textContent='—'; s.appendChild(b);
+  const tree = CONFIG.divisions[divIdx] ? CONFIG.divisions[divIdx].tree : [];
+  const c = tree.find(x=>x.cat===cat);
+  (c?c.subs:[]).forEach(sub=>{ const o=document.createElement('option'); o.value=sub; o.textContent=sub; s.appendChild(o); });
+  s.value = selSub||'';
+}
+function updatePreview(){
+  const divIdx=+ed('edDiv').value, cat=ed('edCat').value, sub=ed('edSub').value, note=ed('edNote').value;
+  const tag = cat ? buildTag(divIdx, cat, sub) : '';
+  ed('edPreview').textContent = (tag||'(no category)') + (note?('\n'+note):'');
+}
+function openEditorForTime(t){
+  const iv = intervalAt(t); edStart = iv.start; edEnd = iv.end;
+  const ev = events()[edStart] || {};
+  const divIdx = (ev.divIdx!=null) ? ev.divIdx : 0;
+  ed('edTime').textContent = fmtRange(edStart, edEnd);
+  ed('edTitle').value = ev.title || '';
+  populateDivs(divIdx);
+  populateCats(divIdx, ev.cat);
+  populateSubs(divIdx, ev.cat, ev.sub);
+  ed('edNote').value = ev.note || '';
+  ed('edDelete').style.visibility = events()[edStart] ? 'visible' : 'hidden';
+  updatePreview();
+  ed('editor').classList.add('open');
+  ed('editorBack').classList.add('open');
+}
+function closeEditor(){ ed('editor').classList.remove('open'); ed('editorBack').classList.remove('open'); }
+
+ed('edDiv').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateCats(d,''); populateSubs(d,'',''); updatePreview(); });
+ed('edCat').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateSubs(d, ed('edCat').value, ''); updatePreview(); });
+ed('edSub').addEventListener('change', updatePreview);
+ed('edNote').addEventListener('input', updatePreview);
+ed('edClose').addEventListener('click', closeEditor);
+ed('editorBack').addEventListener('click', closeEditor);
+ed('edSave').addEventListener('click', ()=>{
+  if(edStart==null) return closeEditor();
+  events()[edStart] = {
+    title: ed('edTitle').value.trim(),
+    divIdx: +ed('edDiv').value,
+    cat: ed('edCat').value,
+    sub: ed('edSub').value,
+    note: ed('edNote').value
+  };
+  save(); closeEditor();
+});
+ed('edDelete').addEventListener('click', ()=>{ if(edStart!=null) delete events()[edStart]; save(); closeEditor(); });
 
 /* ---------- boot ---------- */
 load();
