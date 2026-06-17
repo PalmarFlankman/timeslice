@@ -69,6 +69,7 @@ body{
 }
 #sheet.open{transform:translateY(0);}
 #sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
+#sheet h2 .ver{text-transform:none;letter-spacing:1px;font-weight:400;color:var(--dim);opacity:0.7;margin-left:8px;}
 .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid rgba(191,227,181,0.12);font-size:15px;}
 .row:first-of-type{border-top:none;}
 .row .sub{font-size:11px;color:var(--dim);margin-top:3px;line-height:1.4;}
@@ -121,7 +122,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice</h2>
+    <h2>TimeSlice<span class="ver">v1.10</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -515,19 +516,18 @@ function draw(){
     }
   }
 
-  // big time + small AM/PM + word; time digits and word share one right edge
+  // big time + small AM/PM + word; time digits and word same size, sharing one right edge
   const tp = fmt12(slice);
   const RE = W*0.90;
   ctx.fillStyle = COLORS.text;
   ctx.textAlign = 'right';
-  ctx.font = '400 44px "IBM Plex Mono",monospace';
-  ctx.fillText(tp.hm, RE, sliceY-14);
-  ctx.font = '400 40px "IBM Plex Mono",monospace';
+  ctx.font = '400 34px "IBM Plex Mono",monospace';
+  ctx.fillText(tp.hm, RE, sliceY-10);
   const dotOn = state.dragDot && performance.now() < state.dragDot.until;
-  ctx.fillText((state.dragging||dotOn)?'drag':'slice', RE, sliceY+38);
+  ctx.fillText((state.dragging||dotOn)?'drag':'slice', RE, sliceY+30);
   ctx.textAlign = 'left';
-  ctx.font = '400 14px "IBM Plex Mono",monospace';
-  ctx.fillText(tp.ap, RE + 5, sliceY-30);
+  ctx.font = '400 12px "IBM Plex Mono",monospace';
+  ctx.fillText(tp.ap, RE + 4, sliceY-24);
 }
 
 function mix(a,b,k){
