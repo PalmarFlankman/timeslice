@@ -344,7 +344,7 @@ function layout(){
   let bt = (r.bottom-originY) + 14;
   if(!state.minimal){
     const zr = document.getElementById('zoom').getBoundingClientRect();
-    bt = Math.max(bt, (zr.bottom-originY) + 26);   // ~6px between zoom and the top time text
+    bt = Math.max(bt, (zr.bottom-originY) + 32);   // ~12px between zoom and the top time text
   }
   barTop = bt;
   barBot = H - 74;
@@ -533,23 +533,23 @@ function draw(){
   const apFont  = '400 12px "IBM Plex Mono",monospace';
   ctx.font = apFont;
   const apW = ctx.measureText(tp.ap).width;
-  const apRight   = W - 12;                  // group sits 12px in from the right margin
+  const apRight   = W - 24;                  // group sits 24px in from the right margin
   const rightEdge = apRight - apW - 4;       // shared right edge of time digits + word
   ctx.font = bigFont;
   const grpW    = Math.max(ctx.measureText(tp.hm).width, ctx.measureText(word).width);
   const grpLeft = rightEdge - grpW - 6;
   // bg mask — two rects, leaving the slice-line row clear so the line still shows
   ctx.fillStyle = COLORS.bg;
-  ctx.fillRect(grpLeft, sliceY-36, (apRight+2)-grpLeft, 34);   // above line: time + AM/PM
+  ctx.fillRect(grpLeft, sliceY-38, (apRight+2)-grpLeft, 36);   // above line: time + AM/PM
   ctx.fillRect(grpLeft, sliceY+2,  (apRight+2)-grpLeft, 42);   // below line: word
   // text
   ctx.fillStyle = COLORS.text;
   ctx.textAlign = 'right';
   ctx.font = bigFont;
-  ctx.fillText(tp.hm, rightEdge, sliceY-10);
-  ctx.fillText(word, rightEdge, sliceY+36);     // nudged 6px further below the line
+  ctx.fillText(tp.hm, rightEdge, sliceY-12);    // 2px up from the line
+  ctx.fillText(word, rightEdge, sliceY+36);     // nudged 6px below the line
   ctx.font = apFont;
-  ctx.fillText(tp.ap, apRight, sliceY-24);
+  ctx.fillText(tp.ap, apRight, sliceY-26);
 }
 
 function mix(a,b,k){
