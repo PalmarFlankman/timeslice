@@ -30,7 +30,7 @@ body{
   touch-action:none;
   -webkit-user-select:none;user-select:none;
 }
-#stage{position:fixed;top:0;left:50%;transform:translateX(-50%);width:min(100vw,480px);height:100%;overflow:hidden;touch-action:none;}
+#stage{position:fixed;top:0;left:50%;transform:translateX(-50%);width:min(100vw,480px);height:100vh;height:100dvh;overflow:hidden;touch-action:none;}
 #bar{position:absolute;inset:0;display:block;touch-action:none;}
 
 /* DOM overlays */
@@ -59,15 +59,15 @@ body{
 
 /* settings sheet */
 #sheet{
-  position:absolute;left:50%;bottom:0;width:min(100vw,480px);
+  position:absolute;left:0;right:0;bottom:0;
   background:rgba(20,44,30,0.97);
   border-top:1px solid rgba(191,227,181,0.2);
   border-radius:18px 18px 0 0;
   padding:20px 22px calc(env(safe-area-inset-bottom,0) + 28px);
-  transform:translate(-50%,110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+  transform:translateY(110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
   z-index:10;
 }
-#sheet.open{transform:translate(-50%,0);}
+#sheet.open{transform:translateY(0);}
 #sheet h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
 .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid rgba(191,227,181,0.12);font-size:15px;}
 .row:first-of-type{border-top:none;}
@@ -89,10 +89,10 @@ body{
 /* event editor */
 #editorBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;}
 #editorBack.open{opacity:1;pointer-events:auto;}
-#editor{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.96);width:min(360px,90vw);
+#editor{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.96);width:min(360px,90%);
   background:rgba(20,44,30,0.99);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
   padding:22px 22px 20px;z-index:21;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;
-  max-height:88vh;overflow:auto;}
+  max-height:86%;overflow:auto;}
 #editor.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
 #edClose{position:absolute;top:12px;right:18px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 #edTime{font-size:16px;color:var(--text);margin-bottom:14px;letter-spacing:1px;}
@@ -118,50 +118,50 @@ body{
     <button id="zoomOut" aria-label="Zoom out">&minus;</button>
     <button id="zoomIn" aria-label="Zoom in">+</button>
   </div>
-</div>
 
-<div id="sheet">
-  <span id="sheetClose">&times;</span>
-  <h2>TimeSlice</h2>
-  <div class="row">
-    <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
-    <div class="toggle" id="tglMinimal"><b></b></div>
+  <div id="sheet">
+    <span id="sheetClose">&times;</span>
+    <h2>TimeSlice</h2>
+    <div class="row">
+      <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
+      <div class="toggle" id="tglMinimal"><b></b></div>
+    </div>
+    <div class="row">
+      <div>Reset to now<div class="sub">Reattach the slice line to the current time</div></div>
+      <button class="ghostbtn" id="btnReset">Reset</button>
+    </div>
+    <div class="row">
+      <div>Clear today's slices<div class="sub">Remove every anchor on this day</div></div>
+      <button class="ghostbtn" id="btnClear">Clear</button>
+    </div>
+    <div class="row">
+      <div>Export day<div class="sub">Coming next — writes intervals to your calendar</div></div>
+      <span class="muted">soon</span>
+    </div>
+    <div class="row">
+      <div>Colors &amp; calendars<div class="sub">Coming next</div></div>
+      <span class="muted">soon</span>
+    </div>
   </div>
-  <div class="row">
-    <div>Reset to now<div class="sub">Reattach the slice line to the current time</div></div>
-    <button class="ghostbtn" id="btnReset">Reset</button>
-  </div>
-  <div class="row">
-    <div>Clear today's slices<div class="sub">Remove every anchor on this day</div></div>
-    <button class="ghostbtn" id="btnClear">Clear</button>
-  </div>
-  <div class="row">
-    <div>Export day<div class="sub">Coming next — writes intervals to your calendar</div></div>
-    <span class="muted">soon</span>
-  </div>
-  <div class="row">
-    <div>Colors &amp; calendars<div class="sub">Coming next</div></div>
-    <span class="muted">soon</span>
-  </div>
-</div>
 
-<div id="editorBack"></div>
-<div id="editor">
-  <span id="edClose">&times;</span>
-  <div id="edTime">—</div>
-  <input id="edTitle" type="text" placeholder="event title" autocomplete="off">
-  <label>Calendar</label>
-  <select id="edDiv"></select>
-  <label>Category</label>
-  <select id="edCat"></select>
-  <label>Sub-category</label>
-  <select id="edSub"></select>
-  <label>Note</label>
-  <textarea id="edNote" rows="2" placeholder="note"></textarea>
-  <div id="edPreview"></div>
-  <div id="edBtns">
-    <button id="edDelete" class="ghostbtn">Delete</button>
-    <button id="edSave">Save</button>
+  <div id="editorBack"></div>
+  <div id="editor">
+    <span id="edClose">&times;</span>
+    <div id="edTime">—</div>
+    <input id="edTitle" type="text" placeholder="event title" autocomplete="off">
+    <label>Calendar</label>
+    <select id="edDiv"></select>
+    <label>Category</label>
+    <select id="edCat"></select>
+    <label>Sub-category</label>
+    <select id="edSub"></select>
+    <label>Note</label>
+    <textarea id="edNote" rows="2" placeholder="note"></textarea>
+    <div id="edPreview"></div>
+    <div id="edBtns">
+      <button id="edDelete" class="ghostbtn">Delete</button>
+      <button id="edSave">Save</button>
+    </div>
   </div>
 </div>
 
@@ -325,16 +325,13 @@ let W=0,H=0,dpr=1,originX=0,originY=0;
 let barTop=0, barBot=0, barX=0, barW=20;
 function layout(){
   dpr = window.devicePixelRatio || 1;
-  const vv = window.visualViewport;
-  const vw = vv ? vv.width : window.innerWidth;
-  const vh = vv ? vv.height : window.innerHeight;
-  W = Math.min(vw, 480); H = vh;
   const st = document.getElementById('stage');
-  st.style.width = W+'px'; st.style.height = H+'px';
+  const r0 = st.getBoundingClientRect();           // the 100dvh box defines the real visible area
+  W = r0.width; H = r0.height;
+  originX = r0.left; originY = r0.top;
   cv.width = W*dpr; cv.height = H*dpr;
   cv.style.width = W+'px'; cv.style.height = H+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  const r0 = cv.getBoundingClientRect(); originX = r0.left; originY = r0.top;  // exact; robust to safe areas
   barX   = W*0.30 - 16;
   barW   = 20;
   // date header: center it in the space to the right of the bar
