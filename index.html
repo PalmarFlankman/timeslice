@@ -30,7 +30,7 @@ body{
   touch-action:none;
   -webkit-user-select:none;user-select:none;
 }
-#stage{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:min(100vw,600px);overflow:hidden;touch-action:none;}
+#stage{position:fixed;top:0;left:50%;transform:translateX(-50%);width:min(100vw,480px);height:100%;overflow:hidden;touch-action:none;}
 #bar{position:absolute;inset:0;display:block;touch-action:none;}
 
 /* DOM overlays */
@@ -47,8 +47,8 @@ body{
 
 #hamb{
   position:absolute;
-  right:16px;bottom:calc(env(safe-area-inset-bottom,0) + 16px);
-  width:46px;height:40px;pointer-events:auto;cursor:pointer;
+  right:16px;bottom:calc(env(safe-area-inset-bottom,0) + 10px);
+  width:46px;height:36px;pointer-events:auto;cursor:pointer;
   display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:6px;
 }
 #hamb i{display:block;height:0;border-top:2.5px solid var(--dim);border-radius:2px;}
@@ -59,7 +59,7 @@ body{
 
 /* settings sheet */
 #sheet{
-  position:absolute;left:50%;bottom:0;width:min(100vw,600px);
+  position:absolute;left:50%;bottom:0;width:min(100vw,480px);
   background:rgba(20,44,30,0.97);
   border-top:1px solid rgba(191,227,181,0.2);
   border-radius:18px 18px 0 0;
@@ -82,8 +82,8 @@ body{
 #sheetClose{position:absolute;top:16px;right:20px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 
 /* desktop zoom buttons — frameless +/- aligned with the date text line */
-#zoom{position:absolute;left:14px;top:calc(env(safe-area-inset-top,0) + 2px);display:flex;gap:14px;pointer-events:auto;z-index:5;}
-#zoom button{font-family:inherit;font-size:26px;line-height:26px;height:26px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
+#zoom{position:absolute;left:14px;top:calc(env(safe-area-inset-top,0) + 6px);display:flex;gap:16px;pointer-events:auto;z-index:5;}
+#zoom button{font-family:inherit;font-size:22px;line-height:22px;height:22px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;}
 #zoom button:active{color:var(--text);}
 
 /* event editor */
@@ -325,12 +325,16 @@ let W=0,H=0,dpr=1,originX=0,originY=0;
 let barTop=0, barBot=0, barX=0, barW=20;
 function layout(){
   dpr = window.devicePixelRatio || 1;
-  const vw = window.innerWidth, vh = window.innerHeight;
-  W = Math.min(vw, 600); H = vh;
-  originX = (vw - W)/2; originY = 0;        // stage is centered; convert page coords to stage-local
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : window.innerWidth;
+  const vh = vv ? vv.height : window.innerHeight;
+  W = Math.min(vw, 480); H = vh;
+  const st = document.getElementById('stage');
+  st.style.width = W+'px'; st.style.height = H+'px';
   cv.width = W*dpr; cv.height = H*dpr;
   cv.style.width = W+'px'; cv.style.height = H+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  const r0 = cv.getBoundingClientRect(); originX = r0.left; originY = r0.top;  // exact; robust to safe areas
   barX   = W*0.30 - 16;
   barW   = 20;
   // date header: center it in the space to the right of the bar
@@ -339,8 +343,8 @@ function layout(){
   dh.style.right = '0px';
   // anchor the bar below the rendered header (stage-local coords)
   const r = dh.getBoundingClientRect();
-  barTop = Math.max((r.bottom-originY) + 18, (r.top-originY) + 84);
-  barBot = H - 96;
+  barTop = Math.max((r.bottom-originY) + 14, (r.top-originY) + 56);
+  barBot = H - 74;
 }
 window.addEventListener('resize', ()=>{ layout(); });
 window.addEventListener('orientationchange', ()=> setTimeout(layout, 150));
