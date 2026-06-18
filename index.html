@@ -154,7 +154,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.14</span></h2>
+    <h2>TimeSlice<span class="ver">v1.15</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -696,9 +696,8 @@ function doScroll(ly){
 }
 function dotActive(){ return state.dragDot && performance.now() < state.dragDot.until; }
 
-stage.addEventListener('pointerdown', e=>{
-  if(e.target && e.target.closest && e.target.closest('#dateHead,#zoom,#hamb,#sheet,#editor,#editorBack,#colorPanel,#colorBack')) return;
-  stage.setPointerCapture(e.pointerId);
+cv.addEventListener('pointerdown', e=>{
+  cv.setPointerCapture(e.pointerId);
   const x = e.clientX - originX, y = e.clientY - originY;
   pointers.set(e.pointerId, {x, y});
 
@@ -745,7 +744,7 @@ stage.addEventListener('pointerdown', e=>{
   }
 }, {passive:false});
 
-stage.addEventListener('pointermove', e=>{
+cv.addEventListener('pointermove', e=>{
   if(!pointers.has(e.pointerId)) return;
   const x = e.clientX - originX, y = e.clientY - originY;
   pointers.get(e.pointerId).x = x;
@@ -866,8 +865,8 @@ function endPointer(e){
 
   state.dragging=false; gesture=null; downInfo=null; scrollStart=null;
 }
-stage.addEventListener('pointerup', endPointer, {passive:false});
-stage.addEventListener('pointercancel', endPointer, {passive:false});
+cv.addEventListener('pointerup', endPointer, {passive:false});
+cv.addEventListener('pointercancel', endPointer, {passive:false});
 
 function doSlice(){
   const t = Math.round(effSliceTime()/SNAP_MIN)*SNAP_MIN;
