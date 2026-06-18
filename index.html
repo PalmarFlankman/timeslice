@@ -61,7 +61,7 @@ body{
 /* settings sheet */
 #sheet{
   position:absolute;left:0;right:0;bottom:0;
-  background:rgba(20,44,30,0.97);
+  background:var(--bg);
   border-top:1px solid rgba(191,227,181,0.2);
   border-radius:18px 18px 0 0;
   padding:20px 22px calc(env(safe-area-inset-bottom,0) + 28px);
@@ -85,6 +85,9 @@ body{
 .cgrid input[type=color]{-webkit-appearance:none;appearance:none;width:38px;height:26px;border:1px solid rgba(191,227,181,0.3);border-radius:6px;background:none;padding:0;cursor:pointer;}
 .cgrid input[type=color]::-webkit-color-swatch-wrapper{padding:2px;}
 .cgrid input[type=color]::-webkit-color-swatch{border:none;border-radius:4px;}
+.crow{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:13px;color:var(--text);}
+.crow input[type=range]{flex:1;accent-color:var(--text);}
+.crow .amt{font-size:12px;color:var(--dim);min-width:34px;text-align:right;}
 .palsave{display:flex;gap:8px;margin-top:16px;}
 .palsave input{flex:1;background:rgba(0,0,0,0.25);border:1px solid rgba(191,227,181,0.25);border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;padding:8px 10px;}
 .palsave input::placeholder{color:var(--dim);opacity:0.6;}
@@ -150,7 +153,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.12</span></h2>
+    <h2>TimeSlice<span class="ver">v1.13</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -212,6 +215,11 @@ body{
       <label data-k="d1">Personal<input type="color" id="cD1"></label>
       <label data-k="d2">Household<input type="color" id="cD2"></label>
       <label data-k="d3">Projects<input type="color" id="cD3"></label>
+    </div>
+    <div class="crow">
+      <span>Calendar transparency</span>
+      <input type="range" id="cAlpha" min="0" max="90" step="5">
+      <span id="cAlphaVal" class="amt">0%</span>
     </div>
     <div class="palsave">
       <input type="text" id="palName" placeholder="name this palette" autocomplete="off" spellcheck="false">
@@ -472,7 +480,7 @@ function draw(){
     const gap = 3;
     const top = y0+gap, h = (y1-gap)-(top);
     if(h<=0) continue;
-    ctx.fillStyle = sg.ev ? (CONFIG.divisions[sg.ev.divIdx] ? CONFIG.divisions[sg.ev.divIdx].color : COLORS.ghost) : COLORS.ghost;
+    ctx.fillStyle = sg.ev ? divFill(sg.ev.divIdx) : COLORS.ghost;
     roundRect(barX-barW/2, top, barW, h, barW/2);
     ctx.fill();
   }
@@ -624,7 +632,12 @@ function parseHex(h){
 function withAlpha(hex,a){ const c=parseHex(hex); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
 
 /* ---------- palette ---------- */
-const DEFAULT_PALETTE = { bg:'#0d2117', text:'#bfe3b5', divs:['#7fb0e8','#d9c14a','#aede5c','#5fc0a8'] };
+const DEFAULT_PALETTE = { bg:'#0d2117', text:'#bfe3b5', divs:['#7fb0e8','#d9c14a','#aede5c','#5fc0a8'], alpha:1 };
+function divFill(i){
+  const d = CONFIG.divisions[i]; if(!d) return COLORS.ghost;
+  const a = (state.palette && state.palette.alpha!=null) ? state.palette.alpha : 1;
+  return withAlpha(d.color, a);
+}
 function applyPalette(p){
   // editable: bg, text, four division colors. Everything else derives relative to these.
   COLORS.bg      = p.bg;
@@ -642,7 +655,7 @@ function applyPalette(p){
   root.setProperty('--dim', COLORS.label);
   document.body.style.background = p.bg;
   const meta = document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute('content', p.bg);
-  state.palette = { bg:p.bg, text:p.text, divs:p.divs.slice() };
+  state.palette = { bg:p.bg, text:p.text, divs:p.divs.slice(), alpha:(p.alpha!=null?p.alpha:1) };
 }
 
 /* ---------- snapping ---------- */
@@ -1057,16 +1070,21 @@ ed('edDelete').addEventListener('click', ()=>{ const segs=daySegs(); if(edSegIdx
 function getPalettes(){ try{ return JSON.parse(localStorage.getItem('ts_palettes')||'[]'); }catch(e){ return []; } }
 function setPalettes(a){ try{ localStorage.setItem('ts_palettes', JSON.stringify(a)); }catch(e){} }
 function curPalette(){
+  const t = +document.getElementById('cAlpha').value;   // % transparent
   return {
     bg:   document.getElementById('cBg').value,
     text: document.getElementById('cText').value,
-    divs:[0,1,2,3].map(i=>document.getElementById('cD'+i).value)
+    divs:[0,1,2,3].map(i=>document.getElementById('cD'+i).value),
+    alpha: 1 - t/100
   };
 }
 function fillColorInputs(p){
   document.getElementById('cBg').value   = p.bg;
   document.getElementById('cText').value = p.text;
   [0,1,2,3].forEach(i=>{ document.getElementById('cD'+i).value = p.divs[i] || DEFAULT_PALETTE.divs[i]; });
+  const t = Math.round((1-(p.alpha!=null?p.alpha:1))*100);
+  document.getElementById('cAlpha').value = t;
+  document.getElementById('cAlphaVal').textContent = t+'%';
   // label the four division swatches with their current names
   const labs = document.querySelectorAll('#cgrid label');
   CONFIG.divisions.forEach((d,i)=>{ const lab=labs[2+i]; if(lab){ lab.childNodes[0].nodeValue=d.name; } });
@@ -1097,6 +1115,10 @@ function closeColors(){
 }
 ['cBg','cText','cD0','cD1','cD2','cD3'].forEach(id=>{
   document.getElementById(id).addEventListener('input', ()=>{ applyPalette(curPalette()); save(); });
+});
+document.getElementById('cAlpha').addEventListener('input', ()=>{
+  document.getElementById('cAlphaVal').textContent = document.getElementById('cAlpha').value+'%';
+  applyPalette(curPalette()); save();
 });
 document.getElementById('btnColors').addEventListener('click', ()=>{ sheet.classList.remove('open'); openColors(); });
 document.getElementById('colorClose').addEventListener('click', closeColors);
