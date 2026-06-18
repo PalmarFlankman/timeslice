@@ -122,19 +122,20 @@ body{
 #editorBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;}
 #editorBack.open{opacity:1;pointer-events:auto;}
 #editor{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.96);width:min(360px,90%);
-  background:rgba(20,44,30,0.99);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
-  padding:22px 22px 20px;z-index:21;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;
+  background:var(--bg);border:2px solid rgba(191,227,181,0.22);border-radius:18px;
+  padding:22px 22px 20px;z-index:21;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s, border-color .2s;
   max-height:86%;overflow:auto;}
 #editor.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
 #edClose{position:absolute;top:12px;right:18px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
 #edTime{font-size:16px;color:var(--text);margin-bottom:14px;letter-spacing:1px;}
 #editor label{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:12px 0 5px;}
 #editor input,#editor select,#editor textarea{width:100%;font-family:inherit;font-size:15px;color:var(--text);
-  background:rgba(13,33,23,0.9);border:1px solid rgba(191,227,181,0.22);border-radius:9px;padding:9px 10px;outline:none;-webkit-appearance:none;appearance:none;}
+  background:var(--bg);border:1px solid rgba(191,227,181,0.30);border-radius:9px;padding:9px 10px;outline:none;-webkit-appearance:none;appearance:none;}
 #editor input:focus,#editor select:focus,#editor textarea:focus{border-color:#7fc98a;}
 #edTitle{margin-bottom:2px;}
 #edPreview{margin-top:14px;font-size:13px;color:#cfe8c5;word-break:break-all;min-height:18px;white-space:pre-wrap;}
-#edBtns{display:flex;justify-content:space-between;align-items:center;margin-top:18px;}
+#edBtns{display:flex;gap:10px;align-items:center;margin-top:18px;}
+#edDelete{margin-right:auto;}
 #edSave{font-family:inherit;font-size:15px;color:#0d2117;background:#aede5c;border:none;border-radius:9px;padding:9px 22px;cursor:pointer;}
 #edSave:active{background:#9bcf4a;}
 </style>
@@ -153,7 +154,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.13</span></h2>
+    <h2>TimeSlice<span class="ver">v1.14</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -200,8 +201,10 @@ body{
     <div id="edPreview"></div>
     <div id="edBtns">
       <button id="edDelete" class="ghostbtn">Delete</button>
+      <button id="edExport" class="ghostbtn">Export</button>
       <button id="edSave">Save</button>
     </div>
+    <div id="edStatus" class="sub" style="margin-top:10px;min-height:15px;"></div>
   </div>
 
   <div id="colorBack"></div>
@@ -694,6 +697,7 @@ function doScroll(ly){
 function dotActive(){ return state.dragDot && performance.now() < state.dragDot.until; }
 
 stage.addEventListener('pointerdown', e=>{
+  if(e.target && e.target.closest && e.target.closest('#dateHead,#zoom,#hamb,#sheet,#editor,#editorBack,#colorPanel,#colorBack')) return;
   stage.setPointerCapture(e.pointerId);
   const x = e.clientX - originX, y = e.clientY - originY;
   pointers.set(e.pointerId, {x, y});
@@ -898,7 +902,7 @@ document.getElementById('btnClear').addEventListener('click', ()=>{ state.segsBy
 
 /* ---------- Google auth + export ---------- */
 const GSCOPE='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events';
-let gtoken=null, gtokenClient=null, gPending=false, gPendingExport=false;
+let gtoken=null, gtokenClient=null, gPending=false, gPendingExport=false, gPendingFn=null;
 function gStatus(m,kind){ const s=document.getElementById('expStatus'); if(!s)return; s.textContent=m||''; s.style.color = kind==='err'?'#ff8a6b' : kind==='ok'?'#aede5c' : 'var(--dim)'; }
 function gClearToken(){ localStorage.removeItem('ts_tok'); localStorage.removeItem('ts_exp'); localStorage.removeItem('ts_scope'); gtoken=null; }
 function gAuthedUI(){
@@ -925,6 +929,7 @@ function gBuildClient(cid){
         localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
         gAuthedUI(); gStatus('Connected.','ok');
         if(gPendingExport){ gPendingExport=false; exportDay(); }
+        if(gPendingFn){ const f=gPendingFn; gPendingFn=null; f(); }
       } else gStatus('Sign-in did not complete.','err');
     },
     error_callback:(err)=>{
@@ -984,6 +989,27 @@ async function exportDay(){
   }catch(e){ gStatus(e.message,'err'); }
   finally{ btn.disabled=false; }
 }
+async function exportSeg(seg){
+  if(!seg || !seg.ev) return {ok:false,msg:'Nothing to export.'};
+  if(!gtoken) return {needAuth:true};
+  const calMap=await gListCalMap();
+  const div=CONFIG.divisions[seg.ev.divIdx];
+  const calId=div ? calMap[div.calId] : null;
+  if(!calId) return {ok:false,msg:'No matching Google calendar for '+(div?div.name:'this division')+'.'};
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const baseKey=dayKey(state.date);
+  const tag=buildTag(seg.ev.divIdx, seg.ev.cat, seg.ev.sub);
+  const description=[tag, seg.ev.note].filter(Boolean).join('\n');
+  const summary=seg.ev.title || seg.ev.sub || seg.ev.cat || '(untitled)';
+  const startISO=baseKey+'T'+hhmm(seg.start)+':00';
+  let endISO;
+  if(seg.end>=DAY_MIN){ const d=new Date(state.date); d.setDate(d.getDate()+1); endISO=dayKey(d)+'T00:00:00'; }
+  else endISO=baseKey+'T'+hhmm(seg.end)+':00';
+  const body={summary,description,start:{dateTime:startISO,timeZone:tz},end:{dateTime:endISO,timeZone:tz}};
+  const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)+'/events',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===401){ gClearToken(); gAuthedUI(); return {ok:false,msg:'Session expired — Connect again.'}; }
+  return r.ok ? {ok:true} : {ok:false,msg:'Google rejected the event ('+r.status+').'};
+}
 document.getElementById('gconnect').addEventListener('click', gConnect);
 document.getElementById('btnExport').addEventListener('click', exportDay);
 
@@ -1040,13 +1066,18 @@ function openEditorForTime(t){
   populateSubs(divIdx, ev.cat, ev.sub);
   ed('edNote').value = ev.note || '';
   ed('edDelete').style.visibility = seg.ev ? 'visible' : 'hidden';
+  applyEdDivColor(divIdx);
+  edStatus('');
   updatePreview();
   ed('editor').classList.add('open');
   ed('editorBack').classList.add('open');
 }
+function applyEdDivColor(d){ const div=CONFIG.divisions[d]; ed('editor').style.borderColor = (div&&div.color) || 'rgba(191,227,181,0.22)'; }
+function edStatus(msg,kind){ const el=ed('edStatus'); if(!el) return; el.textContent=msg||''; el.style.color = kind==='ok'?'#9be08a':kind==='err'?'#ff8a6b':'var(--dim)'; }
+function edBuildEv(){ return { title: ed('edTitle').value.trim(), divIdx:+ed('edDiv').value, cat:ed('edCat').value, sub:ed('edSub').value, note:ed('edNote').value }; }
 function closeEditor(){ ed('editor').classList.remove('open'); ed('editorBack').classList.remove('open'); }
 
-ed('edDiv').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateCats(d,''); populateSubs(d,'',''); updatePreview(); });
+ed('edDiv').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateCats(d,''); populateSubs(d,'',''); applyEdDivColor(d); updatePreview(); });
 ed('edCat').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateSubs(d, ed('edCat').value, ''); updatePreview(); });
 ed('edSub').addEventListener('change', updatePreview);
 ed('edNote').addEventListener('input', updatePreview);
@@ -1055,15 +1086,27 @@ ed('editorBack').addEventListener('click', closeEditor);
 ed('edSave').addEventListener('click', ()=>{
   const segs = daySegs();
   if(edSegIdx<0 || edSegIdx>=segs.length) return closeEditor();
-  segs[edSegIdx].ev = {
-    title: ed('edTitle').value.trim(),
-    divIdx: +ed('edDiv').value,
-    cat: ed('edCat').value,
-    sub: ed('edSub').value,
-    note: ed('edNote').value
-  };
+  segs[edSegIdx].ev = edBuildEv();
   save(); closeEditor();
 });
+ed('edExport').addEventListener('click', ()=>{
+  const segs = daySegs();
+  if(edSegIdx<0 || edSegIdx>=segs.length) return;
+  segs[edSegIdx].ev = edBuildEv();           // commit current edits first
+  save();
+  ed('edDelete').style.visibility='visible';
+  const seg = segs[edSegIdx];
+  if(!seg.ev.cat && !seg.ev.title){ edStatus('Add a title or category before exporting.','err'); return; }
+  if(!gtoken){ edStatus('Connecting…'); gPendingFn=()=>doSegExport(seg); gConnect(); return; }
+  doSegExport(seg);
+});
+function doSegExport(seg){
+  const b=ed('edExport'); b.disabled=true; edStatus('Exporting…');
+  exportSeg(seg).then(res=>{
+    if(res.needAuth){ gPendingFn=()=>doSegExport(seg); gConnect(); return; }
+    edStatus(res.ok ? '✓ Exported to Google Calendar.' : res.msg, res.ok?'ok':'err');
+  }).catch(e=>edStatus(e.message,'err')).finally(()=>{ b.disabled=false; });
+}
 ed('edDelete').addEventListener('click', ()=>{ const segs=daySegs(); if(edSegIdx>=0 && edSegIdx<segs.length) segs[edSegIdx].ev=null; save(); closeEditor(); });
 
 /* ---------- colors + palettes ---------- */
