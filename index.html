@@ -9,7 +9,6 @@
 <meta name="apple-mobile-web-app-title" content="TimeSlice">
 <meta name="theme-color" content="#0d2117">
 <title>TimeSlice</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
@@ -74,6 +73,16 @@ body{
 /* colors modal */
 #colorBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:22;}
 #colorBack.open{opacity:1;pointer-events:auto;}
+#catBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:22;}
+#catBack.open{opacity:1;pointer-events:auto;}
+#catPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,90%);
+  background:var(--bg);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
+  padding:20px 22px;z-index:23;opacity:0;pointer-events:none;transition:opacity .2s;max-height:86%;overflow:auto;}
+#catPanel.open{opacity:1;pointer-events:auto;}
+#catPanel h3{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
+#catClose{position:absolute;top:14px;right:18px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+#catPaste{width:100%;font-family:inherit;font-size:12px;color:var(--text);background:rgba(0,0,0,0.25);border:1px solid rgba(191,227,181,0.25);border-radius:9px;padding:9px 10px;outline:none;resize:vertical;}
+#catPaste::placeholder{color:var(--dim);opacity:0.6;}
 #colorPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,90%);
   background:rgba(20,44,30,0.99);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
   padding:20px 22px;z-index:23;opacity:0;pointer-events:none;transition:opacity .2s;max-height:86%;overflow:auto;}
@@ -154,7 +163,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.15</span></h2>
+    <h2>TimeSlice<span class="ver">v1.16</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -172,7 +181,10 @@ body{
       <button class="ghostbtn" id="gconnect">Connect</button>
     </div>
     <div class="row" id="cidRow">
-      <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
+      <div style="width:100%">
+        <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
+        <div class="sub" id="redirHint" style="margin-top:7px;word-break:break-all;line-height:1.5;"></div>
+      </div>
     </div>
     <div class="row">
       <div>Export this day<div class="sub">Write each event to Google Calendar</div></div>
@@ -182,6 +194,10 @@ body{
     <div class="row" id="colorsRow">
       <div>Colors &amp; palettes<div class="sub">Background, text &amp; calendar colors</div></div>
       <button class="ghostbtn" id="btnColors">Edit</button>
+    </div>
+    <div class="row" id="catsRow">
+      <div>Categories<div class="sub">Pull divisions &amp; categories from TimeTrap</div></div>
+      <button class="ghostbtn" id="btnCats">Import</button>
     </div>
   </div>
 
@@ -229,6 +245,18 @@ body{
       <button class="ghostbtn" id="palSaveBtn">Save</button>
     </div>
     <div id="palList"></div>
+  </div>
+
+  <div id="catBack"></div>
+  <div id="catPanel">
+    <span id="catClose">&times;</span>
+    <h3>Import categories</h3>
+    <div class="sub" style="margin-bottom:10px;line-height:1.5;">In TimeTrap, tap “Copy for TimeSlice”, then paste here and Import. This replaces the category lists; your colors and saved events are untouched.</div>
+    <textarea id="catPaste" rows="5" placeholder="Paste the TimeTrap categories blob…" autocomplete="off" spellcheck="false"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+      <button class="ghostbtn" id="catImportBtn">Import</button>
+      <span id="catStatus" class="sub" style="flex:1;"></span>
+    </div>
   </div>
 </div>
 
@@ -917,35 +945,46 @@ function gRestore(){
   if(t && sc===GSCOPE && Date.now()<exp-60000){ gtoken=t; }
   gAuthedUI();
 }
-function gBuildClient(cid){
-  return google.accounts.oauth2.initTokenClient({
-    client_id:cid, scope:GSCOPE,
-    callback:(resp)=>{
-      if(resp&&resp.access_token){
-        gtoken=resp.access_token;
-        localStorage.setItem('ts_tok',gtoken);
-        localStorage.setItem('ts_exp',String(Date.now()+(parseInt(resp.expires_in||'3600',10))*1000));
-        localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
-        gAuthedUI(); gStatus('Connected.','ok');
-        if(gPendingExport){ gPendingExport=false; exportDay(); }
-        if(gPendingFn){ const f=gPendingFn; gPendingFn=null; f(); }
-      } else gStatus('Sign-in did not complete.','err');
-    },
-    error_callback:(err)=>{
-      if(gPending){ gPending=false; try{ gtokenClient.requestAccessToken({prompt:'consent'}); }catch(e){ gStatus('Sign-in error — try again.','err'); } }
-      else { const t=(err&&err.type)||''; gStatus(t==='popup_closed'?'Sign-in window closed.':t==='popup_failed_to_open'?'Popup blocked — allow popups and retry.':'Sign-in could not complete.','err'); }
-    }
-  });
-}
-function gConnect(){
+const GAUTH_EP='https://accounts.google.com/o/oauth2/v2/auth';
+function gRedirectUri(){ return location.origin + location.pathname; }
+function gBeginAuth(pending){
   const cid=(document.getElementById('gcid').value||'').trim();
   if(!cid){ gStatus('Enter your Client ID first.','err'); return; }
   localStorage.setItem('ts_cid',cid);
-  if(typeof google==='undefined' || !google.accounts || !google.accounts.oauth2){ gStatus('Google sign-in still loading — try again.','err'); return; }
-  if(!gtokenClient || gtokenClient._cid!==cid){ gtokenClient=gBuildClient(cid); gtokenClient._cid=cid; }
-  gStatus('Connecting…');
-  if(localStorage.getItem('ts_granted')==='1'){ gPending=true; gtokenClient.requestAccessToken({prompt:''}); }
-  else gtokenClient.requestAccessToken({prompt:'consent'});
+  const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  localStorage.setItem('ts_ostate',st);
+  if(pending){ try{ localStorage.setItem('ts_pending', JSON.stringify(pending)); }catch(e){} }
+  else localStorage.removeItem('ts_pending');
+  const p=new URLSearchParams({
+    client_id:cid, redirect_uri:gRedirectUri(), response_type:'token',
+    scope:GSCOPE, include_granted_scopes:'true', state:st, prompt:'consent'
+  });
+  window.location.href = GAUTH_EP+'?'+p.toString();   // full-page redirect (works in standalone PWAs)
+}
+function gConnect(){ gBeginAuth(null); }
+function gHandleRedirect(){
+  if(!location.hash || location.hash.indexOf('access_token')<0) return false;
+  const h=new URLSearchParams(location.hash.replace(/^#/,''));
+  const tok=h.get('access_token'), exp=h.get('expires_in'), st=h.get('state');
+  history.replaceState(null,'',location.origin+location.pathname+location.search);  // strip token from URL
+  const want=localStorage.getItem('ts_ostate'); localStorage.removeItem('ts_ostate');
+  if(!tok) return false;
+  if(want && st && st!==want) return false;
+  gtoken=tok;
+  localStorage.setItem('ts_tok',tok);
+  localStorage.setItem('ts_exp',String(Date.now()+(parseInt(exp||'3600',10))*1000));
+  localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
+  return true;
+}
+function gResumePending(){
+  let p=null; try{ p=JSON.parse(localStorage.getItem('ts_pending')||'null'); }catch(e){}
+  localStorage.removeItem('ts_pending');
+  if(!p) return;
+  try{
+    if(p.date){ const a=String(p.date).split('-'); if(a.length===3) setDate(new Date(+a[0],+a[1]-1,+a[2])); }
+    if(p.type==='day'){ sheet.classList.add('open'); exportDay(); }
+    else if(p.type==='seg'){ const segs=daySegs(); const idx=segs.findIndex(s=>s.ev && s.start===p.start); if(idx>=0){ openEditorForTime(segs[idx].start); doSegExport(daySegs()[idx]); } }
+  }catch(e){}
 }
 async function gListCalMap(){
   const res=await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=100',{headers:{Authorization:'Bearer '+gtoken}});
@@ -958,7 +997,7 @@ async function gListCalMap(){
 function pad2(n){ return String(n).padStart(2,'0'); }
 function hhmm(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
 async function exportDay(){
-  if(!gtoken){ gPendingExport=true; gConnect(); return; }
+  if(!gtoken){ gBeginAuth({type:'day', date:dayKey(state.date)}); return; }
   const segs=daySegs().filter(s=>s.ev);
   if(!segs.length){ gStatus('No events on this day to export.','err'); return; }
   const btn=document.getElementById('btnExport'); btn.disabled=true; gStatus('Resolving calendars…');
@@ -1096,13 +1135,13 @@ ed('edExport').addEventListener('click', ()=>{
   ed('edDelete').style.visibility='visible';
   const seg = segs[edSegIdx];
   if(!seg.ev.cat && !seg.ev.title){ edStatus('Add a title or category before exporting.','err'); return; }
-  if(!gtoken){ edStatus('Connecting…'); gPendingFn=()=>doSegExport(seg); gConnect(); return; }
+  if(!gtoken){ edStatus('Redirecting to Google…'); gBeginAuth({type:'seg', date:dayKey(state.date), start:seg.start}); return; }
   doSegExport(seg);
 });
 function doSegExport(seg){
   const b=ed('edExport'); b.disabled=true; edStatus('Exporting…');
   exportSeg(seg).then(res=>{
-    if(res.needAuth){ gPendingFn=()=>doSegExport(seg); gConnect(); return; }
+    if(res.needAuth){ gBeginAuth({type:'seg', date:dayKey(state.date), start:seg.start}); return; }
     edStatus(res.ok ? '✓ Exported to Google Calendar.' : res.msg, res.ok?'ok':'err');
   }).catch(e=>edStatus(e.message,'err')).finally(()=>{ b.disabled=false; });
 }
@@ -1174,11 +1213,54 @@ document.getElementById('palSaveBtn').addEventListener('click', ()=>{
   setPalettes(arr); nameEl.value=''; renderPalettes();
 });
 
+/* ---------- category sync (import from TimeTrap) ---------- */
+function normPfx(p){ return String(p||'').trim().toLowerCase(); }
+function getTrees(){ try{ return JSON.parse(localStorage.getItem('ts_trees')||'null'); }catch(e){ return null; } }
+function setTrees(arr){ try{ localStorage.setItem('ts_trees', JSON.stringify(arr)); }catch(e){} }
+function applyTrees(arr){
+  if(!Array.isArray(arr)) return 0;
+  let n=0;
+  arr.forEach(d=>{
+    if(!d || !Array.isArray(d.tree)) return;
+    let idx=CONFIG.divisions.findIndex(x=>normPfx(x.prefix)===normPfx(d.prefix));
+    if(idx<0) idx=CONFIG.divisions.findIndex(x=>(x.name||'').toLowerCase()===(d.name||'').toLowerCase());
+    if(idx<0) return;
+    CONFIG.divisions[idx].tree = d.tree
+      .map(c=>({cat:String(c.cat||c.category||''), subs:Array.isArray(c.subs)?c.subs.map(String):[]}))
+      .filter(c=>c.cat);
+    if(d.name) CONFIG.divisions[idx].name = d.name;
+    if(d.calId) CONFIG.divisions[idx].calId = d.calId;
+    n++;
+  });
+  return n;
+}
+function openCats(){ const st=document.getElementById('catStatus'); if(st) st.textContent=''; document.getElementById('catBack').classList.add('open'); document.getElementById('catPanel').classList.add('open'); }
+function closeCats(){ document.getElementById('catBack').classList.remove('open'); document.getElementById('catPanel').classList.remove('open'); }
+document.getElementById('btnCats').addEventListener('click', ()=>{ sheet.classList.remove('open'); openCats(); });
+document.getElementById('catClose').addEventListener('click', closeCats);
+document.getElementById('catBack').addEventListener('click', closeCats);
+document.getElementById('catImportBtn').addEventListener('click', ()=>{
+  const raw=(document.getElementById('catPaste').value||'').trim();
+  const st=document.getElementById('catStatus');
+  const fail=m=>{ st.textContent=m; st.style.color='#ff8a6b'; };
+  if(!raw) return fail('Paste the blob first.');
+  let data; try{ data=JSON.parse(raw); }catch(e){ return fail('That isn’t valid TimeTrap data.'); }
+  const arr = Array.isArray(data) ? data : (data && Array.isArray(data.divisions) ? data.divisions : null);
+  if(!arr) return fail('No divisions found in that blob.');
+  const n=applyTrees(arr);
+  if(n>0){ setTrees(arr); st.textContent='✓ Updated '+n+' division'+(n!==1?'s':'')+'. Reopen an event to see them.'; st.style.color='#9be08a'; }
+  else fail('Couldn’t match any divisions (check prefixes).');
+});
+
 /* ---------- boot ---------- */
 load();
+(function(){ const t=getTrees(); if(t) applyTrees(t); })();   // categories pulled from TimeTrap
 applyPalette(state.palette || DEFAULT_PALETTE);   // restore saved colors (relative shades derive from bg+text)
 applyMinimal();          // sets zoom visibility + date label, then lays out
+const tsJustAuthed = gHandleRedirect();   // catch #access_token returning from Google
 gRestore();              // restore Google auth state if still valid
+(function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
+if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
 document.body.style.background = COLORS.bg;
 setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
