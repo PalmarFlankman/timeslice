@@ -163,7 +163,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.18</span></h2>
+    <h2>TimeSlice<span class="ver">v1.19</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -958,7 +958,9 @@ function gRestore(){
 const GAUTH_EP='https://accounts.google.com/o/oauth2/v2/auth';
 function gRedirectUri(){ return location.origin + location.pathname; }
 function gBeginAuth(pending){
-  let cid=(document.getElementById('gcid').value||'').replace(/\s+/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'');
+  let cid=(document.getElementById('gcid').value||'').replace(/\s+/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\/+$/,'');
+  const m=cid.match(/[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com/);   // pull the real ID out of any wrapper
+  if(m) cid=m[0];
   document.getElementById('gcid').value = cid;   // reflect the cleaned value back
   if(!cid){ gStatus('Enter your Client ID first.','err'); return; }
   if(!/\.apps\.googleusercontent\.com$/.test(cid)){ gStatus('That Client ID looks incomplete — it should end with .apps.googleusercontent.com','err'); return; }
