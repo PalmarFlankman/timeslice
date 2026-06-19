@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.27</span></h2>
+    <h2>TimeSlice<span class="ver">v1.28</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1102,6 +1102,13 @@ async function gSlicesPush(){
   try{ if(sliceFileId===null) sliceFileId=await driveFind(SLICE_FILE); sliceFileId=await driveUpload(SLICE_FILE, sliceFileId, sliceBlob()); lastSyncError=''; }
   catch(e){ const m=e.message||String(e); lastSyncError=m; console.error('slices push', e); }
 }
+function gAutoPull(){
+  if(!gtoken || !syncReady || document.hidden) return;
+  if(pointers.size>0 || gesture) return;                                  // don't disrupt an active gesture
+  const ed=document.getElementById('editor');
+  if(ed && ed.classList.contains('open')) return;                         // don't yank slices mid-edit
+  gSlicesPull();
+}
 
 /* --- config (palettes + categories): manual Send / Receive --- */
 function configBlob(){ return { v:1, updatedAt:Date.now(), palettes:getPalettes(), palette:state.palette, trees:(getTrees()||null) }; }
@@ -1413,6 +1420,19 @@ document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
 document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
 if(gtoken){ gSlicesPull(); }    // slices auto-pull; palettes/categories come via the Receive button
+setInterval(gAutoPull, 20000);                                           // keep slices fresh every 20s while open
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) gAutoPull(); });
+window.addEventListener('focus', gAutoPull);
+let lastPullAt=0;
+function maybePullSlices(){
+  if(!gtoken) return;
+  const now=Date.now();
+  if(now-lastPullAt < 4000) return;   // throttle bursts
+  lastPullAt=now; gSlicesPull();
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') maybePullSlices(); });
+window.addEventListener('focus', maybePullSlices);
+setInterval(()=>{ if(document.visibilityState==='visible') maybePullSlices(); }, 30000);   // refresh every 30s while open
 document.body.style.background = COLORS.bg;
 setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
