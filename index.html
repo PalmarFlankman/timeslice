@@ -163,7 +163,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.16</span></h2>
+    <h2>TimeSlice<span class="ver">v1.17</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -895,6 +895,16 @@ function endPointer(e){
 }
 cv.addEventListener('pointerup', endPointer, {passive:false});
 cv.addEventListener('pointercancel', endPointer, {passive:false});
+cv.addEventListener('wheel', e=>{
+  e.preventDefault();
+  let dy = e.deltaY;
+  if(e.deltaMode===1) dy *= 16; else if(e.deltaMode===2) dy *= (barBot-barTop);
+  const span = state.winEnd - state.winStart;
+  const move = (dy/(barBot-barTop)) * span;          // wheel down → later, wheel up → earlier
+  const ws = clamp(state.winStart + move, 0, DAY_MIN - span);
+  state.winStart = ws; state.winEnd = ws + span;
+  save();
+}, {passive:false});
 
 function doSlice(){
   const t = Math.round(effSliceTime()/SNAP_MIN)*SNAP_MIN;
