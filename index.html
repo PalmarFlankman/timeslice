@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.23</span></h2>
+    <h2>TimeSlice<span class="ver">v1.24</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1067,6 +1067,9 @@ function applyRemote(b){
     save();
   } finally { applyingRemote=false; }
   localStorage.setItem('ts_updatedAt', String(b.updatedAt||Date.now()));
+  // if the colors panel is open, refresh its list + inputs live
+  const cp=document.getElementById('colorPanel');
+  if(cp && cp.classList.contains('open')){ try{ renderPalettes(); fillColorInputs(state.palette||DEFAULT_PALETTE); }catch(e){} }
 }
 async function gSyncPull(){
   if(!gtoken) return;
@@ -1292,7 +1295,7 @@ function renderPalettes(){
     const nm=document.createElement('div'); nm.className='pn'; nm.textContent=p.name;
     nm.addEventListener('click', ()=>{ applyPalette({bg:p.bg,text:p.text,divs:p.divs.slice()}); fillColorInputs(state.palette); save(); });
     const x=document.createElement('div'); x.className='px'; x.textContent='\u00d7';
-    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); });
+    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); if(typeof scheduleSync==='function') scheduleSync(); });
     row.appendChild(sw); row.appendChild(nm); row.appendChild(x); list.appendChild(row);
   });
 }
@@ -1322,7 +1325,7 @@ document.getElementById('palSaveBtn').addEventListener('click', ()=>{
   const arr=getPalettes(); const p=curPalette(); p.name=name;
   const existing=arr.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
   if(existing>=0) arr[existing]=p; else arr.push(p);
-  setPalettes(arr); nameEl.value=''; renderPalettes();
+  setPalettes(arr); nameEl.value=''; renderPalettes(); if(typeof scheduleSync==='function') scheduleSync();
 });
 
 /* ---------- category sync (import from TimeTrap) ---------- */
