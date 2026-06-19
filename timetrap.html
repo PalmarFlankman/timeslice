@@ -150,7 +150,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);}
 </head>
 <body>
 <div class="wrap">
-  <header><h1>TimeTrap<span class="ver">v2.14</span></h1><span class="subtitle">calendar → timesheet</span></header>
+  <header><h1>TimeTrap<span class="ver">v2.15</span></h1><span class="subtitle">calendar → timesheet</span></header>
 
   <div class="section" id="authSection">
     <div class="sh">Google Authentication</div>
@@ -431,6 +431,7 @@ document.getElementById('copyForSliceBtn').addEventListener('click',async()=>{
     prefix:b.querySelector('.pfx').value.trim(),
     name:b.querySelector('.cni').value.trim(),
     calId:b.dataset.calId,
+    calName:(b.querySelector('.cal-label')?b.querySelector('.cal-label').textContent:'').trim(),
     tree:parseTree(b.querySelector('.cat-tree').value).map(c=>({cat:c.category,subs:c.subs}))
   })).filter(d=>d.name||d.prefix);
   const blob=JSON.stringify({v:1,divisions:divs});
