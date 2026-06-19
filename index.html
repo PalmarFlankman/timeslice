@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.24</span></h2>
+    <h2>TimeSlice<span class="ver">v1.25</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -194,8 +194,11 @@ body{
       <button class="ghostbtn" id="btnExport">Export</button>
     </div>
     <div class="row" id="syncRow">
-      <div style="flex:1">Cross-device sync<div class="sub" id="syncStatus">Palettes, slices &amp; categories via Google Drive</div></div>
-      <button class="ghostbtn" id="btnSync">Sync now</button>
+      <div style="flex:1">Cross-device sync<div class="sub" id="syncStatus">Slices sync on their own. Send pushes this device up; Receive pulls the cloud down.</div></div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        <button class="ghostbtn" id="btnSyncSend">↑ Send</button>
+        <button class="ghostbtn" id="btnSyncGet">↓ Receive</button>
+      </div>
     </div>
     <div id="expStatus" class="sub" style="margin-top:6px;min-height:16px;"></div>
     <div class="row" id="colorsRow">
@@ -1017,97 +1020,116 @@ async function gListCalMap(){
   return map;
 }
 
-/* ---------- cross-device sync (Google Drive app-data) ---------- */
-const DRIVE_FILE='timeslice-state.json';
-let driveFileId=null, syncTimer=null, applyingRemote=false, syncReady=false, lastSyncError='';
-function syncStatus(m){ const e=document.getElementById('syncStatus'); if(e) e.textContent=m||'Palettes, slices & categories via Google Drive'; }
-function localBlob(){
-  return { v:1, updatedAt: parseInt(localStorage.getItem('ts_updatedAt')||'0',10),
-    palettes:getPalettes(), palette:state.palette, segsByDay:state.segsByDay, trees:(getTrees()||null) };
-}
-function stampedBlob(){
-  let t=parseInt(localStorage.getItem('ts_updatedAt')||'0',10);
-  if(!t){ t=Date.now(); localStorage.setItem('ts_updatedAt',String(t)); }
-  const b=localBlob(); b.updatedAt=t; return b;
-}
-async function driveFind(){
-  const q=encodeURIComponent("name='"+DRIVE_FILE+"' and trashed=false");
+/* ---------- cross-device sync (Google Drive app-data) ----------
+   Two files: SLICES auto-sync (last-edit-wins); CONFIG (palettes + categories)
+   moves only when you tap Send / Receive, so editing slices never disturbs palettes. */
+const SLICE_FILE='timeslice-slices.json';
+const CONFIG_FILE='timeslice-config.json';
+let sliceFileId=null, configFileId=null, syncTimer=null, applyingRemote=false, syncReady=false, lastSyncError='';
+function syncStatus(m){ const e=document.getElementById('syncStatus'); if(e) e.textContent=m||'Slices sync on their own. Send pushes this device up; Receive pulls the cloud down.'; }
+
+async function driveFind(name){
+  const q=encodeURIComponent("name='"+name+"' and trashed=false");
   const r=await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields=files(id)',{headers:{Authorization:'Bearer '+gtoken}});
   if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
   if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive find '+r.status+': '+t.slice(0,200)); }
-  const d=await r.json(); const f=(d.files||[])[0]; driveFileId=f?f.id:null; return f||null;
+  const d=await r.json(); const f=(d.files||[])[0]; return f?f.id:null;
 }
 async function driveDownload(id){
   const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+gtoken}});
+  if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
   if(!r.ok) throw new Error('drive get '+r.status);
   return await r.json();
 }
-async function driveUpload(blob){
+async function driveUpload(name, fileId, blob){
   const body=JSON.stringify(blob);
-  if(driveFileId){
-    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+driveFileId+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body});
+  if(fileId){
+    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body});
     if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
-    if(!r.ok) throw new Error('drive patch '+r.status); return;
+    if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive patch '+r.status+': '+t.slice(0,200)); }
+    return fileId;
   }
   const boundary='tsB'+Date.now();
-  const meta=JSON.stringify({name:DRIVE_FILE, parents:['appDataFolder']});
+  const meta=JSON.stringify({name:name, parents:['appDataFolder']});
   const multipart='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+body+'\r\n--'+boundary+'--';
   const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'multipart/related; boundary='+boundary},body:multipart});
   if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
-  if(!r.ok) throw new Error('drive create '+r.status);
-  const d=await r.json(); driveFileId=d.id;
+  if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive create '+r.status+': '+t.slice(0,200)); }
+  const d=await r.json(); return d.id;
 }
-function applyRemote(b){
-  applyingRemote=true;
-  try{
-    if(b.trees){ setTrees(b.trees); applyTrees(b.trees); }
-    if(Array.isArray(b.palettes)) setPalettes(b.palettes);
-    if(b.segsByDay && typeof b.segsByDay==='object') state.segsByDay=b.segsByDay;
-    if(b.palette && b.palette.bg) applyPalette(b.palette);
-    save();
-  } finally { applyingRemote=false; }
-  localStorage.setItem('ts_updatedAt', String(b.updatedAt||Date.now()));
-  // if the colors panel is open, refresh its list + inputs live
-  const cp=document.getElementById('colorPanel');
-  if(cp && cp.classList.contains('open')){ try{ renderPalettes(); fillColorInputs(state.palette||DEFAULT_PALETTE); }catch(e){} }
+
+/* --- slices: automatic, last-edit-wins --- */
+function sliceBlob(){
+  let t=parseInt(localStorage.getItem('ts_slices_at')||'0',10);
+  if(!t){ t=Date.now(); localStorage.setItem('ts_slices_at',String(t)); }
+  return { v:1, updatedAt:t, segsByDay:state.segsByDay };
 }
-async function gSyncPull(){
+async function gSlicesPull(){
   if(!gtoken) return;
-  syncStatus('Syncing…');
   try{
-    const f=await driveFind();
-    if(f){
-      const remote=await driveDownload(f.id);
-      const localT=parseInt(localStorage.getItem('ts_updatedAt')||'0',10);
-      if((remote.updatedAt||0) > localT){ applyRemote(remote); syncStatus('Synced ✓ (loaded from your other device)'); }
-      else if((remote.updatedAt||0) < localT){ await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
-      else syncStatus('Synced ✓');
-    } else { await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
+    const id=await driveFind(SLICE_FILE);
+    if(id){
+      sliceFileId=id;
+      const remote=await driveDownload(id);
+      const localT=parseInt(localStorage.getItem('ts_slices_at')||'0',10);
+      if((remote.updatedAt||0) > localT && remote.segsByDay){
+        applyingRemote=true;
+        try{ state.segsByDay=remote.segsByDay; save(); } finally { applyingRemote=false; }
+        localStorage.setItem('ts_slices_at', String(remote.updatedAt));
+      } else if((remote.updatedAt||0) < localT){
+        sliceFileId=await driveUpload(SLICE_FILE, sliceFileId, sliceBlob());
+      }
+    } else {
+      sliceFileId=await driveUpload(SLICE_FILE, null, sliceBlob());
+    }
     lastSyncError='';
-  }catch(e){ 
-    const msg = e.message||String(e);
-    lastSyncError = msg;
-    if(msg==='401'){ gClearToken(); gAuthedUI(); syncStatus('Reconnect to sync'); }
-    else syncStatus('Sync error (tap Sync now for details)');
-    console.error('sync pull error:', e);
-  }
+  }catch(e){ const m=e.message||String(e); lastSyncError=m; if(m==='401') syncStatus('Reconnect to sync'); console.error('slices pull', e); }
   finally { syncReady=true; }
 }
-function scheduleSync(){
-  if(!gtoken || !syncReady) return;   // don't push until the first pull has reconciled
-  localStorage.setItem('ts_updatedAt', String(Date.now()));
+function scheduleSync(){      // fired by save() on slice changes only
+  if(!gtoken || !syncReady) return;
+  localStorage.setItem('ts_slices_at', String(Date.now()));
   clearTimeout(syncTimer);
-  syncTimer=setTimeout(gSyncPush, 2500);
+  syncTimer=setTimeout(gSlicesPush, 2500);
 }
-async function gSyncPush(){
+async function gSlicesPush(){
   if(!gtoken) return;
-  syncStatus('Syncing…');
-  try{ if(driveFileId===null) await driveFind(); await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
-  catch(e){ 
-    const msg = e.message||String(e);
-    syncStatus('Sync error: '+msg.slice(0,30)+'…');
-    console.error('sync push error:', e);
-  }
+  try{ if(sliceFileId===null) sliceFileId=await driveFind(SLICE_FILE); sliceFileId=await driveUpload(SLICE_FILE, sliceFileId, sliceBlob()); lastSyncError=''; }
+  catch(e){ const m=e.message||String(e); lastSyncError=m; console.error('slices push', e); }
+}
+
+/* --- config (palettes + categories): manual Send / Receive --- */
+function configBlob(){ return { v:1, updatedAt:Date.now(), palettes:getPalettes(), palette:state.palette, trees:(getTrees()||null) }; }
+async function gForcePush(){      // Send: this device's palettes/categories -> cloud
+  if(!gtoken){ gStatus('Connect Google first.','err'); return; }
+  syncStatus('Sending…');
+  try{
+    if(configFileId===null) configFileId=await driveFind(CONFIG_FILE);
+    configFileId=await driveUpload(CONFIG_FILE, configFileId, configBlob());
+    lastSyncError='';
+    syncStatus('Sent ✓ — palettes & categories pushed. Tap Receive on your other device.');
+  }catch(e){ lastSyncError=e.message||String(e); syncStatus('Send failed'); console.error('config push', e); alert('Send error:\n\n'+lastSyncError); }
+}
+async function gForcePull(){      // Receive: cloud palettes/categories -> this device
+  if(!gtoken){ gStatus('Connect Google first.','err'); return; }
+  syncStatus('Receiving…');
+  try{
+    const id=await driveFind(CONFIG_FILE);
+    if(!id){ syncStatus('Nothing sent yet — tap Send on the device with the palettes first.'); return; }
+    configFileId=id;
+    const b=await driveDownload(id);
+    applyingRemote=true;
+    try{
+      if(b.trees){ setTrees(b.trees); applyTrees(b.trees); }
+      if(Array.isArray(b.palettes)) setPalettes(b.palettes);
+      if(b.palette && b.palette.bg) applyPalette(b.palette);
+      save();
+    } finally { applyingRemote=false; }
+    const cp=document.getElementById('colorPanel');
+    if(cp && cp.classList.contains('open')){ try{ renderPalettes(); fillColorInputs(state.palette||DEFAULT_PALETTE); }catch(_){} }
+    lastSyncError='';
+    syncStatus('Received ✓ — palettes & categories updated.');
+  }catch(e){ lastSyncError=e.message||String(e); syncStatus('Receive failed'); console.error('config pull', e); alert('Receive error:\n\n'+lastSyncError); }
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function hhmm(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
@@ -1295,7 +1317,7 @@ function renderPalettes(){
     const nm=document.createElement('div'); nm.className='pn'; nm.textContent=p.name;
     nm.addEventListener('click', ()=>{ applyPalette({bg:p.bg,text:p.text,divs:p.divs.slice()}); fillColorInputs(state.palette); save(); });
     const x=document.createElement('div'); x.className='px'; x.textContent='\u00d7';
-    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); if(typeof scheduleSync==='function') scheduleSync(); });
+    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); });
     row.appendChild(sw); row.appendChild(nm); row.appendChild(x); list.appendChild(row);
   });
 }
@@ -1325,7 +1347,7 @@ document.getElementById('palSaveBtn').addEventListener('click', ()=>{
   const arr=getPalettes(); const p=curPalette(); p.name=name;
   const existing=arr.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
   if(existing>=0) arr[existing]=p; else arr.push(p);
-  setPalettes(arr); nameEl.value=''; renderPalettes(); if(typeof scheduleSync==='function') scheduleSync();
+  setPalettes(arr); nameEl.value=''; renderPalettes();
 });
 
 /* ---------- category sync (import from TimeTrap) ---------- */
@@ -1375,9 +1397,10 @@ applyMinimal();          // sets zoom visibility + date label, then lays out
 const tsJustAuthed = gHandleRedirect();   // catch #access_token returning from Google
 gRestore();              // restore Google auth state if still valid
 (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
-document.getElementById('btnSync').addEventListener('click', async ()=>{ if(!gtoken){ gStatus('Connect Google first.','err'); return; } lastSyncError=''; await gSyncPull(); if(lastSyncError) alert('Sync error:\n\n'+lastSyncError); });
+document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
+document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
-if(gtoken){ gSyncPull(); }    // pull palettes/slices/categories from your other devices
+if(gtoken){ gSlicesPull(); }    // slices auto-pull; palettes/categories come via the Receive button
 document.body.style.background = COLORS.bg;
 setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
