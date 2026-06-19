@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.21</span></h2>
+    <h2>TimeSlice<span class="ver">v1.22</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1080,7 +1080,12 @@ async function gSyncPull(){
       else if((remote.updatedAt||0) < localT){ await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
       else syncStatus('Synced ✓');
     } else { await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
-  }catch(e){ syncStatus(e.message==='401'?'Reconnect to sync':'Sync error — will retry'); }
+  }catch(e){ 
+    const msg = e.message||String(e);
+    if(msg==='401'){ gClearToken(); gAuthedUI(); syncStatus('Reconnect to sync'); }
+    else syncStatus('Sync error: '+msg.slice(0,30)+'… (will retry)');
+    console.error('sync pull error:', e);
+  }
   finally { syncReady=true; }
 }
 function scheduleSync(){
@@ -1093,7 +1098,11 @@ async function gSyncPush(){
   if(!gtoken) return;
   syncStatus('Syncing…');
   try{ if(driveFileId===null) await driveFind(); await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
-  catch(e){ syncStatus(e.message==='401'?'Reconnect to sync':'Sync error — will retry'); }
+  catch(e){ 
+    const msg = e.message||String(e);
+    syncStatus('Sync error: '+msg.slice(0,30)+'…');
+    console.error('sync push error:', e);
+  }
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function hhmm(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
