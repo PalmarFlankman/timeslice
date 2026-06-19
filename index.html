@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.22</span></h2>
+    <h2>TimeSlice<span class="ver">v1.23</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1019,7 +1019,7 @@ async function gListCalMap(){
 
 /* ---------- cross-device sync (Google Drive app-data) ---------- */
 const DRIVE_FILE='timeslice-state.json';
-let driveFileId=null, syncTimer=null, applyingRemote=false, syncReady=false;
+let driveFileId=null, syncTimer=null, applyingRemote=false, syncReady=false, lastSyncError='';
 function syncStatus(m){ const e=document.getElementById('syncStatus'); if(e) e.textContent=m||'Palettes, slices & categories via Google Drive'; }
 function localBlob(){
   return { v:1, updatedAt: parseInt(localStorage.getItem('ts_updatedAt')||'0',10),
@@ -1034,7 +1034,7 @@ async function driveFind(){
   const q=encodeURIComponent("name='"+DRIVE_FILE+"' and trashed=false");
   const r=await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields=files(id)',{headers:{Authorization:'Bearer '+gtoken}});
   if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
-  if(!r.ok) throw new Error('drive find '+r.status);
+  if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive find '+r.status+': '+t.slice(0,200)); }
   const d=await r.json(); const f=(d.files||[])[0]; driveFileId=f?f.id:null; return f||null;
 }
 async function driveDownload(id){
@@ -1080,10 +1080,12 @@ async function gSyncPull(){
       else if((remote.updatedAt||0) < localT){ await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
       else syncStatus('Synced ✓');
     } else { await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
+    lastSyncError='';
   }catch(e){ 
     const msg = e.message||String(e);
+    lastSyncError = msg;
     if(msg==='401'){ gClearToken(); gAuthedUI(); syncStatus('Reconnect to sync'); }
-    else syncStatus('Sync error: '+msg.slice(0,30)+'… (will retry)');
+    else syncStatus('Sync error (tap Sync now for details)');
     console.error('sync pull error:', e);
   }
   finally { syncReady=true; }
@@ -1370,7 +1372,7 @@ applyMinimal();          // sets zoom visibility + date label, then lays out
 const tsJustAuthed = gHandleRedirect();   // catch #access_token returning from Google
 gRestore();              // restore Google auth state if still valid
 (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
-document.getElementById('btnSync').addEventListener('click', ()=>{ if(!gtoken){ gStatus('Connect Google first.','err'); return; } gSyncPull(); });
+document.getElementById('btnSync').addEventListener('click', async ()=>{ if(!gtoken){ gStatus('Connect Google first.','err'); return; } lastSyncError=''; await gSyncPull(); if(lastSyncError) alert('Sync error:\n\n'+lastSyncError); });
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
 if(gtoken){ gSyncPull(); }    // pull palettes/slices/categories from your other devices
 document.body.style.background = COLORS.bg;
