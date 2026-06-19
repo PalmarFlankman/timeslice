@@ -163,7 +163,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.19</span></h2>
+    <h2>TimeSlice<span class="ver">v1.20</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -189,6 +189,10 @@ body{
     <div class="row">
       <div>Export this day<div class="sub">Write each event to Google Calendar</div></div>
       <button class="ghostbtn" id="btnExport">Export</button>
+    </div>
+    <div class="row" id="syncRow">
+      <div style="flex:1">Cross-device sync<div class="sub" id="syncStatus">Palettes, slices &amp; categories via Google Drive</div></div>
+      <button class="ghostbtn" id="btnSync">Sync now</button>
     </div>
     <div id="expStatus" class="sub" style="margin-top:6px;min-height:16px;"></div>
     <div class="row" id="colorsRow">
@@ -391,6 +395,7 @@ function save(){
       palette: state.palette
     }));
   }catch(e){}
+  if(typeof scheduleSync==='function' && !applyingRemote) scheduleSync();
 }
 function migrate(s){
   const out = {};
@@ -938,7 +943,7 @@ document.getElementById('btnReset').addEventListener('click', ()=>{ state.detach
 document.getElementById('btnClear').addEventListener('click', ()=>{ state.segsByDay[dayKey(state.date)]=[{start:0,end:DAY_MIN,ev:null}]; save(); sheet.classList.remove('open'); });
 
 /* ---------- Google auth + export ---------- */
-const GSCOPE='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events';
+const GSCOPE='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata';
 let gtoken=null, gtokenClient=null, gPending=false, gPendingExport=false, gPendingFn=null;
 function gStatus(m,kind){ const s=document.getElementById('expStatus'); if(!s)return; s.textContent=m||''; s.style.color = kind==='err'?'#ff8a6b' : kind==='ok'?'#aede5c' : 'var(--dim)'; }
 function gClearToken(){ localStorage.removeItem('ts_tok'); localStorage.removeItem('ts_exp'); localStorage.removeItem('ts_scope'); gtoken=null; }
@@ -1007,6 +1012,85 @@ async function gListCalMap(){
   const data=await res.json();
   const map={}; (data.items||[]).forEach(c=>{ map[c.summary]=c.id; });
   return map;
+}
+
+/* ---------- cross-device sync (Google Drive app-data) ---------- */
+const DRIVE_FILE='timeslice-state.json';
+let driveFileId=null, syncTimer=null, applyingRemote=false, syncReady=false;
+function syncStatus(m){ const e=document.getElementById('syncStatus'); if(e) e.textContent=m||'Palettes, slices & categories via Google Drive'; }
+function localBlob(){
+  return { v:1, updatedAt: parseInt(localStorage.getItem('ts_updatedAt')||'0',10),
+    palettes:getPalettes(), palette:state.palette, segsByDay:state.segsByDay, trees:(getTrees()||null) };
+}
+function stampedBlob(){
+  let t=parseInt(localStorage.getItem('ts_updatedAt')||'0',10);
+  if(!t){ t=Date.now(); localStorage.setItem('ts_updatedAt',String(t)); }
+  const b=localBlob(); b.updatedAt=t; return b;
+}
+async function driveFind(){
+  const q=encodeURIComponent("name='"+DRIVE_FILE+"' and trashed=false");
+  const r=await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields=files(id)',{headers:{Authorization:'Bearer '+gtoken}});
+  if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+  if(!r.ok) throw new Error('drive find '+r.status);
+  const d=await r.json(); const f=(d.files||[])[0]; driveFileId=f?f.id:null; return f||null;
+}
+async function driveDownload(id){
+  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+gtoken}});
+  if(!r.ok) throw new Error('drive get '+r.status);
+  return await r.json();
+}
+async function driveUpload(blob){
+  const body=JSON.stringify(blob);
+  if(driveFileId){
+    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+driveFileId+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body});
+    if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+    if(!r.ok) throw new Error('drive patch '+r.status); return;
+  }
+  const boundary='tsB'+Date.now();
+  const meta=JSON.stringify({name:DRIVE_FILE, parents:['appDataFolder']});
+  const multipart='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+body+'\r\n--'+boundary+'--';
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'multipart/related; boundary='+boundary},body:multipart});
+  if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+  if(!r.ok) throw new Error('drive create '+r.status);
+  const d=await r.json(); driveFileId=d.id;
+}
+function applyRemote(b){
+  applyingRemote=true;
+  try{
+    if(b.trees){ setTrees(b.trees); applyTrees(b.trees); }
+    if(Array.isArray(b.palettes)) setPalettes(b.palettes);
+    if(b.segsByDay && typeof b.segsByDay==='object') state.segsByDay=b.segsByDay;
+    if(b.palette && b.palette.bg) applyPalette(b.palette);
+    save();
+  } finally { applyingRemote=false; }
+  localStorage.setItem('ts_updatedAt', String(b.updatedAt||Date.now()));
+}
+async function gSyncPull(){
+  if(!gtoken) return;
+  syncStatus('Syncing…');
+  try{
+    const f=await driveFind();
+    if(f){
+      const remote=await driveDownload(f.id);
+      const localT=parseInt(localStorage.getItem('ts_updatedAt')||'0',10);
+      if((remote.updatedAt||0) > localT){ applyRemote(remote); syncStatus('Synced ✓ (loaded from your other device)'); }
+      else if((remote.updatedAt||0) < localT){ await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
+      else syncStatus('Synced ✓');
+    } else { await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
+  }catch(e){ syncStatus(e.message==='401'?'Reconnect to sync':'Sync error — will retry'); }
+  finally { syncReady=true; }
+}
+function scheduleSync(){
+  if(!gtoken || !syncReady) return;   // don't push until the first pull has reconciled
+  localStorage.setItem('ts_updatedAt', String(Date.now()));
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(gSyncPush, 2500);
+}
+async function gSyncPush(){
+  if(!gtoken) return;
+  syncStatus('Syncing…');
+  try{ if(driveFileId===null) await driveFind(); await driveUpload(stampedBlob()); syncStatus('Synced ✓'); }
+  catch(e){ syncStatus(e.message==='401'?'Reconnect to sync':'Sync error — will retry'); }
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function hhmm(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
@@ -1274,7 +1358,9 @@ applyMinimal();          // sets zoom visibility + date label, then lays out
 const tsJustAuthed = gHandleRedirect();   // catch #access_token returning from Google
 gRestore();              // restore Google auth state if still valid
 (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
+document.getElementById('btnSync').addEventListener('click', ()=>{ if(!gtoken){ gStatus('Connect Google first.','err'); return; } gSyncPull(); });
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
+if(gtoken){ gSyncPull(); }    // pull palettes/slices/categories from your other devices
 document.body.style.background = COLORS.bg;
 setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
