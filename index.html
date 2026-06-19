@@ -61,7 +61,7 @@ body{
 #sheet{
   position:absolute;left:0;right:0;bottom:0;
   background:var(--bg);
-  border-top:1px solid rgba(191,227,181,0.2);
+  border:2px solid var(--text);
   border-radius:18px 18px 0 0;
   padding:20px 22px calc(env(safe-area-inset-bottom,0) + 28px);
   transform:translateY(110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
@@ -76,7 +76,7 @@ body{
 #catBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:22;}
 #catBack.open{opacity:1;pointer-events:auto;}
 #catPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,90%);
-  background:var(--bg);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
+  background:var(--bg);border:2px solid var(--text);border-radius:18px;
   padding:20px 22px;z-index:23;opacity:0;pointer-events:none;transition:opacity .2s;max-height:86%;overflow:auto;}
 #catPanel.open{opacity:1;pointer-events:auto;}
 #catPanel h3{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
@@ -84,7 +84,7 @@ body{
 #catPaste{width:100%;font-family:inherit;font-size:12px;color:var(--text);background:rgba(0,0,0,0.25);border:1px solid rgba(191,227,181,0.25);border-radius:9px;padding:9px 10px;outline:none;resize:vertical;}
 #catPaste::placeholder{color:var(--dim);opacity:0.6;}
 #colorPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,90%);
-  background:rgba(20,44,30,0.99);border:1px solid rgba(191,227,181,0.22);border-radius:18px;
+  background:var(--bg);border:2px solid var(--text);border-radius:18px;
   padding:20px 22px;z-index:23;opacity:0;pointer-events:none;transition:opacity .2s;max-height:86%;overflow:auto;}
 #colorPanel.open{opacity:1;pointer-events:auto;}
 #colorPanel h3{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
@@ -163,7 +163,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.17</span></h2>
+    <h2>TimeSlice<span class="ver">v1.18</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -958,8 +958,10 @@ function gRestore(){
 const GAUTH_EP='https://accounts.google.com/o/oauth2/v2/auth';
 function gRedirectUri(){ return location.origin + location.pathname; }
 function gBeginAuth(pending){
-  const cid=(document.getElementById('gcid').value||'').trim();
+  let cid=(document.getElementById('gcid').value||'').replace(/\s+/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'');
+  document.getElementById('gcid').value = cid;   // reflect the cleaned value back
   if(!cid){ gStatus('Enter your Client ID first.','err'); return; }
+  if(!/\.apps\.googleusercontent\.com$/.test(cid)){ gStatus('That Client ID looks incomplete — it should end with .apps.googleusercontent.com','err'); return; }
   localStorage.setItem('ts_cid',cid);
   const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
   localStorage.setItem('ts_ostate',st);
