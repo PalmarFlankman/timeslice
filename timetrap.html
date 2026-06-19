@@ -150,7 +150,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);}
 </head>
 <body>
 <div class="wrap">
-  <header><h1>TimeTrap<span class="ver">v2.13</span></h1><span class="subtitle">calendar → timesheet</span></header>
+  <header><h1>TimeTrap<span class="ver">v2.14</span></h1><span class="subtitle">calendar → timesheet</span></header>
 
   <div class="section" id="authSection">
     <div class="sh">Google Authentication</div>
@@ -316,8 +316,12 @@ function buildTokenClient(cid){
   });
 }
 function connect(){
-  const cid=document.getElementById('clientId').value.trim();
+  let cid=(document.getElementById('clientId').value||'').replace(/\s+/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\/+$/,'');
+  const m=cid.match(/[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com/);
+  if(m)cid=m[0];
+  document.getElementById('clientId').value=cid;
   if(!cid){document.getElementById('authStatus').textContent='Enter your Client ID first';return;}
+  if(!/\.apps\.googleusercontent\.com$/.test(cid)){document.getElementById('authStatus').textContent='That Client ID looks incomplete — it should end with .apps.googleusercontent.com';return;}
   localStorage.setItem('tt_cid',cid);
   if(typeof google==='undefined'||!google.accounts||!google.accounts.oauth2){document.getElementById('authStatus').textContent='Google sign-in is still loading — try again in a second.';return;}
   if(!tokenClient||tokenClient._cid!==cid){tokenClient=buildTokenClient(cid);tokenClient._cid=cid;}
