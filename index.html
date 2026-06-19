@@ -145,7 +145,7 @@ body{
   background:var(--bg);border:1px solid rgba(191,227,181,0.30);border-radius:9px;padding:9px 10px;outline:none;-webkit-appearance:none;appearance:none;}
 #editor input:focus,#editor select:focus,#editor textarea:focus{border-color:#7fc98a;}
 #edTitle{margin-bottom:2px;}
-#edPreview{margin-top:14px;font-size:13px;color:#cfe8c5;word-break:break-all;min-height:18px;white-space:pre-wrap;}
+#edPreview{margin-top:14px;font-size:13px;color:var(--text);word-break:break-all;min-height:18px;white-space:pre-wrap;}
 #edBtns{display:flex;gap:10px;align-items:center;margin-top:18px;}
 #edDelete{margin-right:auto;}
 #edSave{font-family:inherit;font-size:15px;color:#0d2117;background:#aede5c;border:none;border-radius:9px;padding:9px 22px;cursor:pointer;}
@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.25</span></h2>
+    <h2>TimeSlice<span class="ver">v1.26</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1019,6 +1019,11 @@ async function gListCalMap(){
   const map={}; (data.items||[]).forEach(c=>{ map[c.summary]=c.id; });
   return map;
 }
+function resolveCalId(div, calMap){
+  if(!div || !div.calId) return null;
+  if(calMap[div.calId]) return calMap[div.calId];   // calId is a calendar name/summary → use its id
+  return div.calId;                                  // calId is already a real Google calendar id (from TimeTrap import)
+}
 
 /* ---------- cross-device sync (Google Drive app-data) ----------
    Two files: SLICES auto-sync (last-edit-wins); CONFIG (palettes + categories)
@@ -1145,7 +1150,7 @@ async function exportDay(){
     let ok=0, fail=0, skip=0;
     for(const sg of segs){
       const div=CONFIG.divisions[sg.ev.divIdx];
-      const calId=div ? calMap[div.calId] : null;
+      const calId=div ? resolveCalId(div,calMap) : null;
       if(!calId){ skip++; continue; }
       const tag=buildTag(sg.ev.divIdx, sg.ev.cat, sg.ev.sub);
       const description=[tag, sg.ev.note].filter(Boolean).join('\n');
@@ -1169,7 +1174,7 @@ async function exportSeg(seg){
   if(!gtoken) return {needAuth:true};
   const calMap=await gListCalMap();
   const div=CONFIG.divisions[seg.ev.divIdx];
-  const calId=div ? calMap[div.calId] : null;
+  const calId=div ? resolveCalId(div,calMap) : null;
   if(!calId) return {ok:false,msg:'No matching Google calendar for '+(div?div.name:'this division')+'.'};
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
   const baseKey=dayKey(state.date);
