@@ -166,7 +166,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.26</span></h2>
+    <h2>TimeSlice<span class="ver">v1.27</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1208,9 +1208,15 @@ const ed = id=>document.getElementById(id);
 let edSegIdx=-1;
 
 function fmtRange(s,e){ const a=fmt12(s), b=fmt12(e); return a.hm+' '+a.ap+' – '+b.hm+' '+b.ap; }
+function calLabel(d){
+  if(!d) return '';
+  if(d.calName) return d.calName;                                   // calendar name imported from TimeTrap
+  if(d.calId && d.calId.indexOf('@')<0) return d.calId;             // default config: calId is the calendar name
+  return d.name;                                                    // fallback to division name
+}
 function populateDivs(sel){
   const s=ed('edDiv'); s.innerHTML='';
-  CONFIG.divisions.forEach((d,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=d.name; s.appendChild(o); });
+  CONFIG.divisions.forEach((d,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=calLabel(d); s.appendChild(o); });
   s.value = sel;
 }
 function populateCats(divIdx, selCat){
@@ -1371,6 +1377,7 @@ function applyTrees(arr){
       .map(c=>({cat:String(c.cat||c.category||''), subs:Array.isArray(c.subs)?c.subs.map(String):[]}))
       .filter(c=>c.cat);
     if(d.name) CONFIG.divisions[idx].name = d.name;
+    if(d.calName) CONFIG.divisions[idx].calName = d.calName;
     if(d.calId) CONFIG.divisions[idx].calId = d.calId;
     n++;
   });
