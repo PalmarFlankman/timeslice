@@ -139,6 +139,17 @@ body{
   max-height:86%;overflow:auto;}
 #editor.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
 #edClose{position:absolute;top:12px;right:18px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+#edFlame{position:absolute;top:11px;right:46px;background:none;border:none;padding:0;margin:0;color:var(--text);cursor:pointer;line-height:0;opacity:0.9;}
+#edFlame:active{opacity:0.6;}
+#hotPop{position:absolute;top:40px;right:14px;width:min(240px,82%);background:var(--bg);border:2px solid var(--text);border-radius:12px;padding:12px;z-index:24;display:none;max-height:60%;overflow:auto;}
+#hotPop.open{display:block;}
+#hotList .hotrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid rgba(127,127,127,0.25);}
+#hotList .hotname{flex:1;font-size:14px;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hotList .hotx{color:var(--dim);cursor:pointer;font-size:16px;padding:0 2px;}
+#hotList .hot-empty{font-size:12px;color:var(--dim);padding:6px 0 2px;}
+#loginPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;display:none;}
+#loginPop button{background:var(--bg);border:2px solid var(--text);color:var(--text);font-family:inherit;font-size:16px;font-weight:500;padding:15px 26px;border-radius:16px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.35);}
+#loginPop button:active{opacity:0.7;}
 #edTime{font-size:16px;color:var(--text);margin-bottom:14px;letter-spacing:1px;}
 #editor label{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:12px 0 5px;}
 #editor input,#editor select,#editor textarea{width:100%;font-family:inherit;font-size:15px;color:var(--text);
@@ -166,7 +177,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.28</span></h2>
+    <h2>TimeSlice<span class="ver">v1.29</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -211,9 +222,16 @@ body{
     </div>
   </div>
 
+  <div id="loginPop"><button id="loginPopBtn">Connect&nbsp;Google</button></div>
   <div id="editorBack"></div>
   <div id="editor">
+    <button id="edFlame" title="Hot buttons"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></button>
     <span id="edClose">&times;</span>
+    <div id="hotPop">
+      <button class="ghostbtn" id="hotSaveBtn" style="width:100%;margin-bottom:8px;">＋ Save this event</button>
+      <div id="hotStatus" class="sub" style="min-height:0;"></div>
+      <div id="hotList"></div>
+    </div>
     <div id="edTime">—</div>
     <input id="edTitle" type="text" placeholder="event title" autocomplete="off">
     <label>Calendar</label>
@@ -959,6 +977,7 @@ function gAuthedUI(){
   if(ar) ar.style.display = on?'none':'flex';
   if(cr) cr.style.display = on?'none':'flex';
   const b=document.getElementById('gconnect'); if(b) b.textContent = on?'Connected':'Connect';
+  const lp=document.getElementById('loginPop'); if(lp) lp.style.display = on?'none':'block';
 }
 function gRestore(){
   const c=localStorage.getItem('ts_cid'); const el=document.getElementById('gcid'); if(c&&el) el.value=c;
@@ -1261,6 +1280,7 @@ function openEditorForTime(t){
   ed('edDelete').style.visibility = seg.ev ? 'visible' : 'hidden';
   applyEdDivColor(divIdx);
   edStatus('');
+  closeHot();
   updatePreview();
   ed('editor').classList.add('open');
   ed('editorBack').classList.add('open');
@@ -1275,6 +1295,45 @@ ed('edCat').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populat
 ed('edSub').addEventListener('change', updatePreview);
 ed('edNote').addEventListener('input', updatePreview);
 ed('edClose').addEventListener('click', closeEditor);
+
+/* ---------- hot buttons (saved event presets) ---------- */
+function getHotBtns(){ try{ return JSON.parse(localStorage.getItem('ts_hotbtns')||'[]'); }catch(e){ return []; } }
+function setHotBtns(a){ try{ localStorage.setItem('ts_hotbtns', JSON.stringify(a)); }catch(e){} }
+function hotStatus(m){ const e=document.getElementById('hotStatus'); if(e){ e.textContent=m||''; e.style.color = (m && m[0]==='✓') ? '#9be08a' : 'var(--dim)'; } }
+function renderHotList(){
+  const list=document.getElementById('hotList'); const arr=getHotBtns(); list.innerHTML='';
+  if(!arr.length){ list.innerHTML='<div class="hot-empty">No hot buttons yet. Fill the event, then “Save this event.”</div>'; return; }
+  arr.forEach((hb,i)=>{
+    const row=document.createElement('div'); row.className='hotrow';
+    const nm=document.createElement('div'); nm.className='hotname'; nm.textContent=hb.label || hb.title || hb.cat || '(untitled)';
+    nm.addEventListener('click', ()=>{ applyHotBtn(hb); });
+    const x=document.createElement('div'); x.className='hotx'; x.textContent='\u00d7';
+    x.addEventListener('click', ()=>{ const a=getHotBtns(); a.splice(i,1); setHotBtns(a); renderHotList(); });
+    row.appendChild(nm); row.appendChild(x); list.appendChild(row);
+  });
+}
+function applyHotBtn(hb){
+  ed('edTitle').value = hb.title||'';
+  const d = hb.divIdx||0;
+  populateDivs(d); populateCats(d, hb.cat||''); populateSubs(d, hb.cat||'', hb.sub||'');
+  ed('edNote').value = hb.note||'';
+  applyEdDivColor(d); updatePreview(); closeHot();
+}
+function saveHotBtn(){
+  const ev = edBuildEv();    // {title, divIdx, cat, sub, note}
+  if(!ev.title && !ev.cat){ hotStatus('Add a title or category first.'); return; }
+  const arr=getHotBtns();
+  arr.push({ title:ev.title, divIdx:ev.divIdx, cat:ev.cat, sub:ev.sub, note:ev.note, label:(ev.title||ev.sub||ev.cat) });
+  setHotBtns(arr); renderHotList(); hotStatus('✓ Saved');
+}
+function openHot(){ hotStatus(''); renderHotList(); document.getElementById('hotPop').classList.add('open'); }
+function closeHot(){ document.getElementById('hotPop').classList.remove('open'); }
+document.getElementById('edFlame').addEventListener('click', ()=>{ const p=document.getElementById('hotPop'); p.classList.contains('open') ? closeHot() : openHot(); });
+document.getElementById('hotSaveBtn').addEventListener('click', saveHotBtn);
+
+/* ---------- login popup (centered, shown when not connected) ---------- */
+function updateLoginPop(){ const el=document.getElementById('loginPop'); if(el) el.style.display = gtoken ? 'none' : 'block'; }
+document.getElementById('loginPopBtn').addEventListener('click', gConnect);
 ed('editorBack').addEventListener('click', closeEditor);
 ed('edSave').addEventListener('click', ()=>{
   const segs = daySegs();
@@ -1419,6 +1478,7 @@ gRestore();              // restore Google auth state if still valid
 document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
 document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
+updateLoginPop();
 if(gtoken){ gSlicesPull(); }    // slices auto-pull; palettes/categories come via the Receive button
 setInterval(gAutoPull, 20000);                                           // keep slices fresh every 20s while open
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) gAutoPull(); });
