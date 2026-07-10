@@ -177,7 +177,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.29</span></h2>
+    <h2>TimeSlice<span class="ver">v1.30</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -548,15 +548,24 @@ function draw(){
 
   // event labels next to the bar — hidden in minimal mode
   if(!state.minimal){
-    ctx.font = '300 13px "IBM Plex Mono",monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = COLORS.label;
+    const LF  = '300 13px "IBM Plex Mono",monospace';
+    const LFI = 'italic 300 13px "IBM Plex Mono",monospace';
     for(const sg of segs){
       if(!sg.ev) continue;
       const y0=Math.max(timeToY(sg.start),barTop), y1=Math.min(timeToY(sg.end),barBot);
-      if(y1-y0 < 16) continue;
-      const lbl = sg.ev.sub || sg.ev.cat || sg.ev.title || '';
-      if(lbl) ctx.fillText(lbl, barX+barW, (y0+y1)/2+4);
+      const h=y1-y0;
+      if(h < 16) continue;
+      const primary = sg.ev.sub || sg.ev.cat || sg.ev.title || '';
+      const title = sg.ev.title || '';
+      const midY = (y0+y1)/2;
+      if(title && title !== primary && h >= 34){          // room for two lines: sub-category + italic title
+        ctx.font = LF;  ctx.fillText(primary, barX+barW, midY - 3);
+        ctx.font = LFI; ctx.fillText(title,   barX+barW, midY + 14);
+      } else if(primary){
+        ctx.font = LF;  ctx.fillText(primary, barX+barW, midY + 4);
+      }
     }
   }
 
