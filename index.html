@@ -148,7 +148,7 @@ body{
 #hotList .hotx{color:var(--dim);cursor:pointer;font-size:16px;padding:0 2px;}
 #hotList .hot-empty{font-size:12px;color:var(--dim);padding:6px 0 2px;}
 #loginPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;display:none;}
-#loginPop button{background:var(--bg);border:2px solid var(--text);color:var(--text);font-family:inherit;font-size:16px;font-weight:500;padding:15px 26px;border-radius:16px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.35);}
+#loginPop button{background:var(--bg);border:2px solid #ff4133;color:#ff4133;font-family:inherit;font-size:16px;font-weight:500;padding:15px 26px;border-radius:16px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.35);}
 #loginPop button:active{opacity:0.7;}
 #edTime{font-size:16px;color:var(--text);margin-bottom:14px;letter-spacing:1px;}
 #editor label{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:12px 0 5px;}
@@ -177,7 +177,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.30</span></h2>
+    <h2>TimeSlice<span class="ver">v1.31</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -201,8 +201,11 @@ body{
       </div>
     </div>
     <div class="row">
-      <div>Export this day<div class="sub">Write each event to Google Calendar</div></div>
-      <button class="ghostbtn" id="btnExport">Export</button>
+      <div style="flex:1">Export this day<div class="sub">To Google Calendar, or copy a text summary</div></div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        <button class="ghostbtn" id="btnExport">Calendar</button>
+        <button class="ghostbtn" id="btnCopyDay">Copy text</button>
+      </div>
     </div>
     <div class="row" id="syncRow">
       <div style="flex:1">Cross-device sync<div class="sub" id="syncStatus">Slices sync on their own. Send pushes this device up; Receive pulls the cloud down.</div></div>
@@ -352,7 +355,7 @@ function divByName(n){ return CONFIG.divisions.findIndex(d=>d.name===n); }
 
 /* ---------- persistent-ish state ---------- */
 const DAY_MIN = 1440;
-const MIN_SPAN = 240;     // 4-hour max zoom
+const MIN_SPAN = 120;     // 2-hour max zoom
 const SNAP_MIN = 5;       // round dragging to 5-minute steps
 const SNAP_PX  = 14;      // pixel distance to snap onto an anchor / now
 
@@ -569,29 +572,47 @@ function draw(){
     }
   }
 
-  // ticks (hour marks) — hidden in minimal mode
+  // ticks — hidden in minimal mode
   if(!state.minimal){
+    const span = state.winEnd - state.winStart;
+    const fine = span <= 360;                 // 6-hour window or tighter: hourly labels + 15-min ticks
     const startH = Math.ceil(state.winStart/60);
     const endH   = Math.floor(state.winEnd/60);
     for(let h=startH;h<=endH;h++){
       const y = timeToY(h*60);
       if(y<barTop-1||y>barBot+1) continue;
       if(Math.abs(y-barTop)<3 || Math.abs(y-barBot)<3) continue;  // no end hashes; the corner label sits here
-      const major = (h%6===0);
-      ctx.strokeStyle = major?COLORS.tick:COLORS.tickMin;
+      const major = (h%3===0);                // longer line every 3 hours
+      ctx.strokeStyle = COLORS.tick;          // every hour hatch shares the bright tick color
       ctx.lineWidth = major?2:1.5;
       const len = major?18:12;
       ctx.beginPath();
       ctx.moveTo(W*0.09, y);
       ctx.lineTo(W*0.09+len, y);
       ctx.stroke();
-      // hour number at the 3-hour marks (3,6,9,12,3,6,9) — skip midnight ends
-      if(h%3===0 && h!==0 && h!==24){
+      // hour number: every hour when zoomed to <=6h, otherwise at the 3-hour marks
+      if((fine || h%3===0) && h!==0 && h!==24){
         let h12 = h%12; if(h12===0) h12=12;
         ctx.fillStyle = COLORS.tick;
         ctx.font = '300 13px "IBM Plex Mono",monospace';
         ctx.textAlign = 'left';
         ctx.fillText(String(h12), 16, y+4);
+      }
+    }
+    // 15-minute ticks when zoomed to a 6-hour window or tighter
+    if(fine){
+      const q0 = Math.ceil(state.winStart/15), q1 = Math.floor(state.winEnd/15);
+      for(let q=q0;q<=q1;q++){
+        if(q%4===0) continue;                 // whole hours already drawn above
+        const y = timeToY(q*15);
+        if(y<barTop-1||y>barBot+1) continue;
+        if(Math.abs(y-barTop)<3 || Math.abs(y-barBot)<3) continue;
+        ctx.strokeStyle = COLORS.tick;        // same brightness as the hour ticks
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(W*0.09, y);
+        ctx.lineTo(W*0.09+6, y);              // half the hour-tick length
+        ctx.stroke();
       }
     }
   }
@@ -1227,6 +1248,30 @@ async function exportSeg(seg){
 }
 document.getElementById('gconnect').addEventListener('click', gConnect);
 document.getElementById('btnExport').addEventListener('click', exportDay);
+function dayTextSummary(){
+  const segs = daySegs().filter(s=>s.ev && (s.ev.title||s.ev.cat||s.ev.sub));
+  const lines=[];
+  segs.forEach(s=>{
+    const ev=s.ev;
+    const t1=fmtCornerLine(s.start), t2=(s.end>=DAY_MIN?'12:00 AM':fmtCornerLine(s.end));
+    lines.push(t1+' - '+t2+' - '+(ev.title||ev.sub||ev.cat||''));
+    let catline='';
+    if(ev.cat && ev.sub) catline=ev.cat+' / '+ev.sub;
+    else if(ev.cat) catline=ev.cat;
+    else if(ev.sub) catline=ev.sub;
+    if(catline) lines.push(catline);
+    if(ev.note) lines.push(ev.note);          // preserves the note's own line breaks
+    lines.push('');                            // actual blank line between entries
+  });
+  return lines.join('\n').replace(/\n+$/,'');
+}
+async function copyDaySummary(){
+  const txt=dayTextSummary();
+  if(!txt.trim()){ gStatus('No events to copy for this day.','err'); return; }
+  try{ await navigator.clipboard.writeText(txt); gStatus('✓ Day summary copied to clipboard.','ok'); }
+  catch(e){ window.prompt('Copy this day summary:', txt); }
+}
+document.getElementById('btnCopyDay').addEventListener('click', copyDaySummary);
 
 /* ---------- zoom control (desktop) ---------- */
 function zoomBy(f){
