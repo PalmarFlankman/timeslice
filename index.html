@@ -147,6 +147,14 @@ body{
 #hotList .hotname{flex:1;font-size:14px;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #hotList .hotx{color:var(--dim);cursor:pointer;font-size:16px;padding:0 2px;}
 #hotList .hot-empty{font-size:12px;color:var(--dim);padding:6px 0 2px;}
+#hotHead{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+#hotHead #hotTitle{flex:1;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hotHead #hotBack{font-size:20px;color:var(--text);cursor:pointer;line-height:1;display:none;}
+#hotHead #hotClose{font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+#hotBody .hotrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid rgba(127,127,127,0.25);}
+#hotBody .hotname{flex:1;font-size:14px;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hotBody .hotx{color:var(--dim);cursor:pointer;font-size:16px;padding:0 2px;}
+#hotBody .hot-empty{font-size:12px;color:var(--dim);padding:6px 0 2px;}
 #loginPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;display:none;}
 #loginPop button{background:var(--bg);border:2px solid #ff4133;color:#ff4133;font-family:inherit;font-size:16px;font-weight:500;padding:15px 26px;border-radius:16px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.35);}
 #loginPop button:active{opacity:0.7;}
@@ -177,7 +185,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.31</span></h2>
+    <h2>TimeSlice<span class="ver">v1.32</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -231,9 +239,14 @@ body{
     <button id="edFlame" title="Hot buttons"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></button>
     <span id="edClose">&times;</span>
     <div id="hotPop">
+      <div id="hotHead">
+        <span id="hotBack">‹</span>
+        <span id="hotTitle">Hot buttons</span>
+        <span id="hotClose">&times;</span>
+      </div>
       <button class="ghostbtn" id="hotSaveBtn" style="width:100%;margin-bottom:8px;">＋ Save this event</button>
       <div id="hotStatus" class="sub" style="min-height:0;"></div>
-      <div id="hotList"></div>
+      <div id="hotBody"></div>
     </div>
     <div id="edTime">—</div>
     <input id="edTitle" type="text" placeholder="event title" autocomplete="off">
@@ -1350,21 +1363,84 @@ ed('edSub').addEventListener('change', updatePreview);
 ed('edNote').addEventListener('input', updatePreview);
 ed('edClose').addEventListener('click', closeEditor);
 
-/* ---------- hot buttons (saved event presets) ---------- */
+/* ---------- hot buttons (shared master list across devices) ---------- */
 function getHotBtns(){ try{ return JSON.parse(localStorage.getItem('ts_hotbtns')||'[]'); }catch(e){ return []; } }
 function setHotBtns(a){ try{ localStorage.setItem('ts_hotbtns', JSON.stringify(a)); }catch(e){} }
 function hotStatus(m){ const e=document.getElementById('hotStatus'); if(e){ e.textContent=m||''; e.style.color = (m && m[0]==='✓') ? '#9be08a' : 'var(--dim)'; } }
-function renderHotList(){
-  const list=document.getElementById('hotList'); const arr=getHotBtns(); list.innerHTML='';
-  if(!arr.length){ list.innerHTML='<div class="hot-empty">No hot buttons yet. Fill the event, then “Save this event.”</div>'; return; }
-  arr.forEach((hb,i)=>{
-    const row=document.createElement('div'); row.className='hotrow';
-    const nm=document.createElement('div'); nm.className='hotname'; nm.textContent=hb.label || hb.title || hb.cat || '(untitled)';
-    nm.addEventListener('click', ()=>{ applyHotBtn(hb); });
-    const x=document.createElement('div'); x.className='hotx'; x.textContent='\u00d7';
-    x.addEventListener('click', ()=>{ const a=getHotBtns(); a.splice(i,1); setHotBtns(a); renderHotList(); });
-    row.appendChild(nm); row.appendChild(x); list.appendChild(row);
-  });
+function hotKey(h){ return JSON.stringify([h.title||'',h.divIdx||0,h.cat||'',h.sub||'',h.note||'']); }
+function dedupeHot(arr){ const seen={}, out=[]; (arr||[]).forEach(h=>{ const k=hotKey(h); if(!seen[k]){ seen[k]=1; out.push(h); } }); return out; }
+
+/* --- Drive sync for the shared list --- */
+const HOT_FILE='timeslice-hotbtns.json';
+let hotFileId=null;
+function hotBlob(){ let t=parseInt(localStorage.getItem('ts_hot_at')||'0',10); if(!t){ t=Date.now(); localStorage.setItem('ts_hot_at',String(t)); } return { v:1, updatedAt:t, items:getHotBtns() }; }
+async function gHotPull(){
+  if(!gtoken) return;
+  try{
+    const id=await driveFind(HOT_FILE);
+    if(id){
+      hotFileId=id;
+      const remote=await driveDownload(id);
+      const rItems=Array.isArray(remote.items)?remote.items:[];
+      if(!localStorage.getItem('ts_hot_merged')){                       // one-time: gather this device's list into the master
+        const merged=dedupeHot(rItems.concat(getHotBtns()));
+        setHotBtns(merged);
+        localStorage.setItem('ts_hot_merged','1');
+        localStorage.setItem('ts_hot_at',String(Date.now()));
+        hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob());
+      } else {
+        const localT=parseInt(localStorage.getItem('ts_hot_at')||'0',10);
+        if((remote.updatedAt||0) > localT){ setHotBtns(dedupeHot(rItems)); localStorage.setItem('ts_hot_at',String(remote.updatedAt)); }
+        else if((remote.updatedAt||0) < localT){ hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob()); }
+      }
+    } else {                                                            // no master yet: seed it from this device
+      if(!localStorage.getItem('ts_hot_at')) localStorage.setItem('ts_hot_at',String(Date.now()));
+      localStorage.setItem('ts_hot_merged','1');
+      hotFileId=await driveUpload(HOT_FILE, null, hotBlob());
+    }
+  }catch(e){ console.error('hot pull', e); }
+}
+async function gHotPush(){
+  if(!gtoken) return;
+  localStorage.setItem('ts_hot_at',String(Date.now()));
+  try{ if(hotFileId===null) hotFileId=await driveFind(HOT_FILE); hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob()); }
+  catch(e){ console.error('hot push', e); }
+}
+
+/* --- two-level UI: categories → hot buttons --- */
+let hotView='cats';    // 'cats' or a category name
+function hotCatOf(h){ return h.cat || '(no category)'; }
+function renderHot(){
+  const arr=getHotBtns();
+  const body=document.getElementById('hotBody');
+  const back=document.getElementById('hotBack');
+  const title=document.getElementById('hotTitle');
+  if(!body) return; body.innerHTML='';
+  if(hotView==='cats'){
+    back.style.display='none'; title.textContent='Hot buttons';
+    const cats=[]; arr.forEach(h=>{ const c=hotCatOf(h); if(cats.indexOf(c)<0) cats.push(c); });
+    if(!cats.length){ body.innerHTML='<div class="hot-empty">No hot buttons yet. Fill the event, then “Save this event.”</div>'; return; }
+    cats.forEach(c=>{
+      const row=document.createElement('div'); row.className='hotrow';
+      const nm=document.createElement('div'); nm.className='hotname';
+      nm.textContent=c+'  ('+arr.filter(h=>hotCatOf(h)===c).length+')';
+      nm.addEventListener('click',()=>{ hotView=c; renderHot(); });
+      const ch=document.createElement('div'); ch.className='hotx'; ch.textContent='›';
+      row.appendChild(nm); row.appendChild(ch); body.appendChild(row);
+    });
+  } else {
+    back.style.display='inline'; title.textContent=hotView;
+    const items=arr.map((h,i)=>({h,i})).filter(o=>hotCatOf(o.h)===hotView);
+    if(!items.length){ hotView='cats'; renderHot(); return; }
+    items.forEach(o=>{
+      const row=document.createElement('div'); row.className='hotrow';
+      const nm=document.createElement('div'); nm.className='hotname'; nm.textContent=o.h.label||o.h.title||o.h.sub||o.h.cat||'(untitled)';
+      nm.addEventListener('click',()=>{ applyHotBtn(o.h); });
+      const x=document.createElement('div'); x.className='hotx'; x.textContent='\u00d7';
+      x.addEventListener('click',()=>{ deleteHotBtn(o.i); });
+      row.appendChild(nm); row.appendChild(x); body.appendChild(row);
+    });
+  }
 }
 function applyHotBtn(hb){
   ed('edTitle').value = hb.title||'';
@@ -1374,16 +1450,24 @@ function applyHotBtn(hb){
   applyEdDivColor(d); updatePreview(); closeHot();
 }
 function saveHotBtn(){
-  const ev = edBuildEv();    // {title, divIdx, cat, sub, note}
+  const ev = edBuildEv();
   if(!ev.title && !ev.cat){ hotStatus('Add a title or category first.'); return; }
-  const arr=getHotBtns();
-  arr.push({ title:ev.title, divIdx:ev.divIdx, cat:ev.cat, sub:ev.sub, note:ev.note, label:(ev.title||ev.sub||ev.cat) });
-  setHotBtns(arr); renderHotList(); hotStatus('✓ Saved');
+  const arr=dedupeHot(getHotBtns().concat([{ title:ev.title, divIdx:ev.divIdx, cat:ev.cat, sub:ev.sub, note:ev.note, label:(ev.title||ev.sub||ev.cat) }]));
+  setHotBtns(arr); gHotPush(); renderHot(); hotStatus('✓ Saved to all devices');
 }
-function openHot(){ hotStatus(''); renderHotList(); document.getElementById('hotPop').classList.add('open'); }
+function deleteHotBtn(i){
+  const arr=getHotBtns(); const hb=arr[i]; if(!hb) return;
+  if(!confirm('Delete “'+(hb.label||hb.title||hb.cat||'this hot button')+'” from ALL your devices?')) return;
+  arr.splice(i,1); setHotBtns(arr); gHotPush();
+  if(!arr.some(h=>hotCatOf(h)===hotView)) hotView='cats';
+  renderHot();
+}
+function openHot(){ hotView='cats'; hotStatus(''); renderHot(); document.getElementById('hotPop').classList.add('open'); gHotPull().then(()=>renderHot()); }
 function closeHot(){ document.getElementById('hotPop').classList.remove('open'); }
 document.getElementById('edFlame').addEventListener('click', ()=>{ const p=document.getElementById('hotPop'); p.classList.contains('open') ? closeHot() : openHot(); });
 document.getElementById('hotSaveBtn').addEventListener('click', saveHotBtn);
+document.getElementById('hotClose').addEventListener('click', closeHot);
+document.getElementById('hotBack').addEventListener('click', ()=>{ hotView='cats'; renderHot(); });
 
 /* ---------- login popup (centered, shown when not connected) ---------- */
 function updateLoginPop(){ const el=document.getElementById('loginPop'); if(el) el.style.display = gtoken ? 'none' : 'block'; }
@@ -1533,7 +1617,7 @@ document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
 document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
 updateLoginPop();
-if(gtoken){ gSlicesPull(); }    // slices auto-pull; palettes/categories come via the Receive button
+if(gtoken){ gSlicesPull(); gHotPull(); }    // slices auto-pull; hot buttons assemble/sync; palettes via Receive
 setInterval(gAutoPull, 20000);                                           // keep slices fresh every 20s while open
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) gAutoPull(); });
 window.addEventListener('focus', gAutoPull);
