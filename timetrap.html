@@ -150,7 +150,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);}
 </head>
 <body>
 <div class="wrap">
-  <header><h1>TimeTrap<span class="ver">v2.15</span></h1><span class="subtitle">calendar → timesheet</span></header>
+  <header><h1>TimeTrap<span class="ver">v2.17</span></h1><span class="subtitle">calendar → timesheet</span></header>
 
   <div class="section" id="authSection">
     <div class="sh">Google Authentication</div>
@@ -227,6 +227,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);}
           <button class="btn" id="loadDefaultsBtn" style="display:none;margin-top:10px;">↻ Reload standard categories</button>
           <button class="btn" id="copyForSliceBtn" style="margin-top:10px;">⧉ Copy for TimeSlice</button>
           <span id="copyForSliceStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;"></span>
+          <div id="cfgSyncStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px;"></div>
         </div>
         <div class="othertags-wrap">
           <div class="tags-grid">
@@ -277,7 +278,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';document.head.appendChild(s);"></script>
 <script>
-const SCOPE='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events';
+const SCOPE='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata';
 const TRASH_SVG='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 let token=null,allEvents=[],allCalendars=[];
 
@@ -363,8 +364,89 @@ function saveConfig(){
   localStorage.setItem('tt_cfg',JSON.stringify(blocks));
   localStorage.setItem('tt_othertags',document.getElementById('otherTagsBox').value);
   localStorage.setItem('tt_desctags',document.getElementById('descTagsBox').value);
+  if(typeof scheduleCfgPush==='function') scheduleCfgPush();
 }
 function loadConfig(){try{return JSON.parse(localStorage.getItem('tt_cfg')||'[]');}catch(e){return [];}}
+
+/* ---------- shared category sync (Google Drive app-data) ---------- */
+const DRIVE_CFG='timeslice-config.json';
+let cfgFileId=null, ttApplyingRemote=false, ttCfgTimer=null;
+function cfgSyncStatus(m){ const e=document.getElementById('cfgSyncStatus'); if(e) e.textContent=m||''; }
+async function ttFind(name){
+  const q=encodeURIComponent("name='"+name+"' and trashed=false");
+  const r=await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields=files(id)',{headers:{Authorization:'Bearer '+token}});
+  if(r.status===401){ forceReauth('Session expired — click Connect to continue.'); throw new Error('401'); }
+  if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive find '+r.status+': '+t.slice(0,160)); }
+  const d=await r.json(); const f=(d.files||[])[0]; return f?f.id:null;
+}
+async function ttDownload(id){
+  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+token}});
+  if(!r.ok) throw new Error('drive get '+r.status);
+  return await r.json();
+}
+async function ttUpload(name,fileId,blob){
+  const body=JSON.stringify(blob);
+  if(fileId){
+    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body});
+    if(!r.ok) throw new Error('drive patch '+r.status); return fileId;
+  }
+  const boundary='ttB'+Date.now();
+  const meta=JSON.stringify({name:name,parents:['appDataFolder']});
+  const mp='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+body+'\r\n--'+boundary+'--';
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'multipart/related; boundary='+boundary},body:mp});
+  if(!r.ok) throw new Error('drive create '+r.status);
+  const d=await r.json(); return d.id;
+}
+function treeToText(tree){ return (tree||[]).map(c=>[c.cat||c.category||''].concat((c.subs||[]).map(s=>'/'+s)).join('\n')).filter(x=>x).join('\n'); }
+function ttTreesFromBlocks(){
+  return [...document.querySelectorAll('.div-block')].map(b=>({
+    prefix:b.querySelector('.pfx').value.trim(),
+    name:b.querySelector('.cni').value.trim(),
+    calId:b.dataset.calId,
+    calName:(b.querySelector('.cal-label')?b.querySelector('.cal-label').textContent:'').trim(),
+    tree:parseTree(b.querySelector('.cat-tree').value).map(c=>({cat:c.category,subs:c.subs}))
+  })).filter(d=>d.name||d.prefix);
+}
+function ttMatchBlock(entry){
+  const blocks=[...document.querySelectorAll('.div-block')];
+  return (entry.prefix && blocks.find(b=>b.querySelector('.pfx').value.trim()===entry.prefix))
+      || (entry.calId && blocks.find(b=>b.dataset.calId===entry.calId))
+      || blocks.find(b=>b.querySelector('.cni').value.trim().toLowerCase()===(entry.name||'').toLowerCase());
+}
+async function ttConfigPull(){
+  if(!token) return;
+  try{
+    const id=await ttFind(DRIVE_CFG);
+    if(!id) return;                                   // nothing in cloud yet
+    cfgFileId=id;
+    const cfg=await ttDownload(id);
+    if(!Array.isArray(cfg.trees) || !cfg.trees.length) return;
+    ttApplyingRemote=true;
+    let n=0;
+    cfg.trees.forEach(entry=>{
+      if(!Array.isArray(entry.tree)) return;
+      const b=ttMatchBlock(entry);
+      if(!b) return;
+      b.querySelector('.cat-tree').value = treeToText(entry.tree);
+      n++;
+    });
+    saveConfig();                                     // persist to localStorage (push suppressed while applying)
+    ttApplyingRemote=false;
+    refreshCategoryDropdown();
+    cfgSyncStatus(n?('✓ Categories synced from cloud ('+n+' division'+(n!==1?'s':'')+').'):'');
+  }catch(e){ ttApplyingRemote=false; console.error('cfg pull', e); }
+}
+async function ttConfigPush(){
+  if(!token) return;
+  try{
+    if(cfgFileId===null) cfgFileId=await ttFind(DRIVE_CFG);
+    let cfg={}; if(cfgFileId){ try{ cfg=await ttDownload(cfgFileId); }catch(e){ cfg={}; } }  // preserve TimeSlice's palettes
+    cfg.v=1; cfg.updatedAt=Date.now(); cfg.trees=ttTreesFromBlocks();
+    cfgFileId=await ttUpload(DRIVE_CFG, cfgFileId, cfg);
+    cfgSyncStatus('✓ Categories saved to cloud.');
+  }catch(e){ console.error('cfg push', e); }
+}
+function scheduleCfgPush(){ if(!token || ttApplyingRemote) return; clearTimeout(ttCfgTimer); ttCfgTimer=setTimeout(ttConfigPush, 2500); }
 function shownIds(){return new Set([...document.querySelectorAll('.div-block')].map(b=>b.dataset.calId));}
 function blockByCalId(id){return [...document.querySelectorAll('.div-block')].find(b=>b.dataset.calId===id);}
 
@@ -406,6 +488,7 @@ async function loadCalendars(){
     allCalendars.forEach(cal=>{if(Object.keys(defaults).includes(cal.summary)&&!savedMap[cal.id]){container.appendChild(makeBlock(cal.id,cal.summary,defaults[cal.summary],defaultPrefix[cal.summary]||'',DEFAULT_TREES[defaults[cal.summary]]||''));}});
     if(localStorage.getItem('tt_treesver')!=='1'){let applied=false;document.querySelectorAll('.div-block').forEach(b=>{const name=b.querySelector('.cni').value.trim();if(DEFAULT_TREES[name]){b.querySelector('.cat-tree').value=DEFAULT_TREES[name];applied=true;}});if(applied)saveConfig();localStorage.setItem('tt_treesver','1');}
     updateDerived();refreshChecklists();dimEmptySelects();
+    ttConfigPull();                                   // cloud categories win over saved + the defaults re-apply above
   }catch(e){
     loading.style.display='none';errBox.style.display='block';errBox.textContent='Could not load calendars: '+e.message+'. You can add them manually below.';
     document.getElementById('addGoogleBtn').style.display='block';document.getElementById('addManualBtn').style.display='block';
@@ -505,6 +588,7 @@ function getMonday(d){const x=new Date(d);x.setHours(0,0,0,0);const day=x.getDay
 function isoWeek(date){const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));const dayNum=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-dayNum+3);const ft=d.getTime();d.setUTCMonth(0,1);if(d.getUTCDay()!==4){d.setUTCMonth(0,1+((4-d.getUTCDay())+7)%7);}return 1+Math.ceil((ft-d)/(7*86400000));}
 function fmtMDY(iso){const p=(iso||'').split('-');return p.length===3?(parseInt(p[1],10)+'/'+parseInt(p[2],10)+'/'+p[0]):iso;}
 function isoToSerial(iso){const p=(iso||'').split('-').map(Number);return Date.UTC(p[0],p[1]-1,p[2])/86400000+25569;}
+function timeFrac(d){return (d.getHours()*3600+d.getMinutes()*60+d.getSeconds())/86400;}
 function weekLabel(d){const mon=getMonday(d);const m=mon.toLocaleDateString('en-US',{month:'short'}).toUpperCase();return 'Wk '+pad(isoWeek(d))+' - '+m+' '+mon.getDate();}
 
 // ════════ CREATE EVENT ════════
@@ -663,7 +747,7 @@ document.getElementById('fetchBtn').addEventListener('click',async()=>{
       (data.items||[]).forEach(ev=>{
         const isAllDay=!ev.start.dateTime;const s=new Date(ev.start.dateTime||ev.start.date);const e=new Date(ev.end.dateTime||ev.end.date);
         const mins=Math.round((e-s)/60000);const hrs=Math.round(mins/60*100)/100;const desc=ev.description||'';const parsed=parseTags(desc,prefix,tree);
-        allEvents.push({Division:div,Category:parsed.category,'Sub-Category':parsed.sub,Event:ev.summary||'(no title)',Week:weekLabel(s),Date:fmtDate(s),'Start Time':isAllDay?'All day':shortTime(ev.start.dateTime),'End Time':isAllDay?'':shortTime(ev.end.dateTime),'Duration (hrs)':hrs,Tags:parsed.tags,Notes:stripTags(desc),_date:s.getFullYear()+'-'+pad(s.getMonth()+1)+'-'+pad(s.getDate())});
+        allEvents.push({Division:div,Category:parsed.category,'Sub-Category':parsed.sub,Event:ev.summary||'(no title)',Week:weekLabel(s),Date:fmtDate(s),'Start Time':isAllDay?'All day':shortTime(ev.start.dateTime),'End Time':isAllDay?'':shortTime(ev.end.dateTime),'Duration (hrs)':hrs,Tags:parsed.tags,Notes:stripTags(desc),_date:s.getFullYear()+'-'+pad(s.getMonth()+1)+'-'+pad(s.getDate()),_sfrac:isAllDay?null:timeFrac(s),_efrac:isAllDay?null:timeFrac(e)});
       });
     }catch(e){console.error(calId,e);}
   }
@@ -687,14 +771,18 @@ document.getElementById('exportBtn').addEventListener('click',()=>{
   if(!allEvents.length){alert('Nothing to export yet — import some events first.');return;}
   const efrom=document.getElementById('startDate').value,eto=document.getElementById('endDate').value;
   const serials=allEvents.map(ev=>isoToSerial(ev._date));
-  const rows=allEvents.map(ev=>{const {_date,...rest}=ev;rest.Date=fmtMDY(_date);return rest;});
+  const sfracs=allEvents.map(ev=>ev._sfrac);const efracs=allEvents.map(ev=>ev._efrac);
+  const rows=allEvents.map(ev=>{const {_date,_sfrac,_efrac,...rest}=ev;rest.Date=fmtMDY(_date);return rest;});
   try{
     if(typeof XLSX==='undefined') throw new Error('Excel library not loaded');
     const ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:14},{wch:16},{wch:16},{wch:34},{wch:16},{wch:13},{wch:11},{wch:11},{wch:12},{wch:20},{wch:44}];
     const range=XLSX.utils.decode_range(ws['!ref']);
     for(let R=range.s.r+1;R<=range.e.r;R++){
+      const i=R-1;
       const dur=ws[XLSX.utils.encode_cell({r:R,c:8})];if(dur&&typeof dur.v==='number'){dur.t='n';dur.z='0.00';}
-      const dc=ws[XLSX.utils.encode_cell({r:R,c:5})];if(dc){dc.t='n';dc.v=serials[R-1];dc.z='m/d/yyyy';}
+      const dc=ws[XLSX.utils.encode_cell({r:R,c:5})];if(dc){dc.t='n';dc.v=serials[i];dc.z='m/d/yyyy';}
+      const sc=ws[XLSX.utils.encode_cell({r:R,c:6})];if(sc&&sfracs[i]!=null){sc.t='n';sc.v=sfracs[i];sc.z='h:mm AM/PM';}
+      const ec=ws[XLSX.utils.encode_cell({r:R,c:7})];if(ec&&efracs[i]!=null){ec.t='n';ec.v=efracs[i];ec.z='h:mm AM/PM';}
     }
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Timesheet');XLSX.writeFile(wb,exportFilename()+'.xlsx');recordExport(efrom,eto);
   }catch(err){console.error('xlsx export failed, CSV fallback:',err);recordExport(efrom,eto);exportCSV(rows);alert('The Excel library was blocked from loading, so I exported a CSV instead — it opens in Excel the same way.');}
