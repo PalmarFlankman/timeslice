@@ -185,7 +185,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.32</span></h2>
+    <h2>TimeSlice<span class="ver">v1.33</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1174,15 +1174,29 @@ function gAutoPull(){
 
 /* --- config (palettes + categories): manual Send / Receive --- */
 function configBlob(){ return { v:1, updatedAt:Date.now(), palettes:getPalettes(), palette:state.palette, trees:(getTrees()||null) }; }
-async function gForcePush(){      // Send: this device's palettes/categories -> cloud
+async function gForcePush(){      // Send: this device's palettes -> cloud (categories are owned by TimeTrap, so preserve them)
   if(!gtoken){ gStatus('Connect Google first.','err'); return; }
   syncStatus('Sending…');
   try{
     if(configFileId===null) configFileId=await driveFind(CONFIG_FILE);
-    configFileId=await driveUpload(CONFIG_FILE, configFileId, configBlob());
+    let remote={}; if(configFileId){ try{ remote=await driveDownload(configFileId); }catch(e){} }
+    const keepTrees = (Array.isArray(remote.trees) && remote.trees.length) ? remote.trees : (getTrees()||null);
+    configFileId=await driveUpload(CONFIG_FILE, configFileId, { v:1, updatedAt:Date.now(), palettes:getPalettes(), palette:state.palette, trees:keepTrees });
     lastSyncError='';
-    syncStatus('Sent ✓ — palettes & categories pushed. Tap Receive on your other device.');
+    syncStatus('Sent ✓ — palettes pushed (categories are managed by TimeTrap).');
   }catch(e){ lastSyncError=e.message||String(e); syncStatus('Send failed'); console.error('config push', e); alert('Send error:\n\n'+lastSyncError); }
+}
+async function gCatsPull(){       // auto: pull just the categories that TimeTrap owns
+  if(!gtoken) return;
+  try{
+    const id=await driveFind(CONFIG_FILE);
+    if(!id) return;
+    const cfg=await driveDownload(id);
+    if(Array.isArray(cfg.trees) && cfg.trees.length){
+      applyingRemote=true;
+      try{ setTrees(cfg.trees); applyTrees(cfg.trees); save(); } finally { applyingRemote=false; }
+    }
+  }catch(e){ console.error('cats pull', e); }
 }
 async function gForcePull(){      // Receive: cloud palettes/categories -> this device
   if(!gtoken){ gStatus('Connect Google first.','err'); return; }
@@ -1617,10 +1631,10 @@ document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
 document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
 if(tsJustAuthed){ gAuthedUI(); gStatus('Connected.','ok'); gResumePending(); }
 updateLoginPop();
-if(gtoken){ gSlicesPull(); gHotPull(); }    // slices auto-pull; hot buttons assemble/sync; palettes via Receive
+if(gtoken){ gSlicesPull(); gHotPull(); gCatsPull(); }    // slices + hot buttons + categories auto-sync; palettes via Receive
 setInterval(gAutoPull, 20000);                                           // keep slices fresh every 20s while open
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) gAutoPull(); });
-window.addEventListener('focus', gAutoPull);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ gAutoPull(); gCatsPull(); } });
+window.addEventListener('focus', ()=>{ gAutoPull(); gCatsPull(); });
 let lastPullAt=0;
 function maybePullSlices(){
   if(!gtoken) return;
