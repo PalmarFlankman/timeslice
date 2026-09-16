@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.50</span></h2>
+    <h2>TimeSlice<span class="ver">v1.51</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -301,6 +301,22 @@ body{
 </div>
 
 <script>
+/* DEBUG — created first so it catches any crash */
+(function(){
+  const dbg=document.createElement('div');
+  dbg.id='tsDbg';
+  dbg.style.cssText='position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font:11px/1.4 monospace;padding:8px 10px;z-index:9999;max-height:45vh;overflow-y:auto;white-space:pre-wrap;pointer-events:auto;';
+  document.body.appendChild(dbg);
+  window.dbgLog=function(msg){ dbg.textContent+='\n'+new Date().toLocaleTimeString()+' '+msg; dbg.scrollTop=9999; };
+  window.onerror=function(msg,src,line,col){ dbgLog('ERR: '+msg+' @'+line+':'+col); return false; };
+  window.addEventListener('unhandledrejection',function(e){ dbgLog('PROMISE ERR: '+(e.reason&&e.reason.message||e.reason)); });
+  dbgLog('script start — v1.51');
+  dbgLog('firebase defined: '+(typeof firebase!=='undefined'));
+  dbgLog('hash: '+location.hash.slice(0,50)||'(none)');
+  dbgLog('ts_cid: '+(localStorage.getItem('ts_cid')||'(none)').slice(0,30));
+  dbgLog('ts_tok: '+(localStorage.getItem('ts_tok')?'SET':'(none)'));
+})();
+
 /* ============================================================
    TimeSlice v0.1 — core time bar
    The day is measured in minutes from midnight: 0 .. 1440.
@@ -1806,23 +1822,8 @@ function maybePullSlices(){
 
 
 document.body.style.background = COLORS.bg;
-
-/* ── DEBUG overlay — shows exactly what's happening ── */
-(function(){
-  const dbg=document.createElement('div');
-  dbg.id='tsDbg';
-  dbg.style.cssText='position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:8px;z-index:999;max-height:40vh;overflow:auto;white-space:pre-wrap;';
-  document.body.appendChild(dbg);
-  window.dbgLog=function(msg){ dbg.textContent+='\n'+msg; dbg.scrollTop=dbg.scrollHeight; };
-  window.onerror=function(msg,src,line){ dbgLog('JS ERR: '+msg+' @'+line); };
-  dbgLog('boot: v1.49 hash='+location.hash.slice(0,40));
-  dbgLog('localStorage ts_tok='+(localStorage.getItem('ts_tok')?'SET':'null'));
-  dbgLog('localStorage ts_cid='+(localStorage.getItem('ts_cid')||'null').slice(0,20));
-  dbgLog('GSCOPE prefix='+GSCOPE.slice(0,30));
-  dbgLog('barTop='+barTop+' barBot='+barBot+' W='+W+' H='+H);
-})();
-
-fbAuth.onAuthStateChanged(function(u){ dbgLog('fbAuth state: '+(u?u.email:'null')); });
+dbgLog('boot: barTop='+barTop+' barBot='+barBot+' W='+W+' H='+H);
+fbAuth.onAuthStateChanged(function(u){ dbgLog('fbAuth: '+(u?u.email:'null')); });
 
 requestAnimationFrame(()=>{ layout(); requestAnimationFrame(()=>{ layout(); dbgLog('post-layout: barTop='+barTop+' barBot='+barBot); }); });
 setTimeout(layout, 400);
