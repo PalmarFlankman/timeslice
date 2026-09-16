@@ -180,7 +180,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.42</span></h2>
+    <h2>TimeSlice<span class="ver">v1.43</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -742,6 +742,65 @@ function applyPalette(p){
   state.palette = { bg:p.bg, text:p.text, divs:p.divs.slice(), alpha:(p.alpha!=null?p.alpha:1) };
 }
 
+/* ---------- palette + category storage (restored) ---------- */
+function getPalettes(){ try{ return JSON.parse(localStorage.getItem('ts_palettes')||'[]'); }catch(e){ return []; } }
+function _setPalettesLocal(a){ try{ localStorage.setItem('ts_palettes', JSON.stringify(a)); }catch(e){} }
+function getTrees(){ try{ return JSON.parse(localStorage.getItem('ts_trees')||'null'); }catch(e){ return null; } }
+function _setTreesLocal(a){ try{ localStorage.setItem('ts_trees', JSON.stringify(a)); }catch(e){} }
+function normPfx(p){ return String(p||'').trim().toLowerCase(); }
+function applyTrees(arr){
+  if(!Array.isArray(arr)) return 0;
+  let n=0;
+  arr.forEach(d=>{
+    if(!d || !Array.isArray(d.tree)) return;
+    let idx=CONFIG.divisions.findIndex(x=>normPfx(x.prefix)===normPfx(d.prefix));
+    if(idx<0) idx=CONFIG.divisions.findIndex(x=>(x.name||'').toLowerCase()===(d.name||'').toLowerCase());
+    if(idx<0) return;
+    CONFIG.divisions[idx].tree = d.tree.map(c=>({cat:String(c.cat||c.category||''), subs:Array.isArray(c.subs)?c.subs.map(String):[]})).filter(c=>c.cat);
+    if(d.name) CONFIG.divisions[idx].name = d.name;
+    if(d.calName) CONFIG.divisions[idx].calName = d.calName;
+    if(d.calId) CONFIG.divisions[idx].calId = d.calId;
+    n++;
+  });
+  return n;
+}
+/* ---------- color editor (restored) ---------- */
+function curPalette(){
+  const t = +document.getElementById('cAlpha').value;
+  return {
+    bg:   document.getElementById('cBg').value,
+    text: document.getElementById('cText').value,
+    divs:[0,1,2,3].map(i=>document.getElementById('cD'+i).value),
+    alpha: 1 - t/100
+  };
+}
+function fillColorInputs(p){
+  document.getElementById('cBg').value   = p.bg;
+  document.getElementById('cText').value = p.text;
+  [0,1,2,3].forEach(i=>{ document.getElementById('cD'+i).value = p.divs[i] || DEFAULT_PALETTE.divs[i]; });
+  const t = Math.round((1-(p.alpha!=null?p.alpha:1))*100);
+  document.getElementById('cAlpha').value = t;
+  document.getElementById('cAlphaVal').textContent = t+'%';
+  const labs = document.querySelectorAll('#cgrid label');
+  CONFIG.divisions.forEach((d,i)=>{ const lab=labs[2+i]; if(lab){ lab.childNodes[0].nodeValue=(d.calName||(d.calId&&d.calId.indexOf('@')<0?d.calId:d.name)); } });
+}
+function renderPalettes(){
+  const list=document.getElementById('palList'); const arr=getPalettes(); list.innerHTML='';
+  if(!arr.length){ list.innerHTML='<div class="palempty">No saved palettes yet.</div>'; return; }
+  arr.forEach((p,i)=>{
+    const row=document.createElement('div'); row.className='palrow';
+    const sw=document.createElement('div'); sw.className='sw';
+    [p.bg,p.text,...p.divs].forEach(c=>{ const b=document.createElement('i'); b.style.background=c; sw.appendChild(b); });
+    const nm=document.createElement('div'); nm.className='pn'; nm.textContent=p.name;
+    nm.addEventListener('click', ()=>{ applyPalette({bg:p.bg,text:p.text,divs:p.divs.slice(),alpha:p.alpha}); fillColorInputs(state.palette); save(); });
+    const x=document.createElement('div'); x.className='px'; x.textContent='\u00d7';
+    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); });
+    row.appendChild(sw); row.appendChild(nm); row.appendChild(x); list.appendChild(row);
+  });
+}
+function openColors(){ fillColorInputs(state.palette || DEFAULT_PALETTE); renderPalettes(); document.getElementById('colorBack').classList.add('open'); document.getElementById('colorPanel').classList.add('open'); }
+function closeColors(){ document.getElementById('colorBack').classList.remove('open'); document.getElementById('colorPanel').classList.remove('open'); }
+
 /* ---------- snapping ---------- */
 function nearestAnchor(t){
   const ty = timeToY(t);
@@ -1009,6 +1068,16 @@ const fbAuth = firebase.auth();
 const fbDb   = firebase.firestore();
 let fbUser   = null;          // signed-in Firebase user (or null)
 
+// On-screen error surface (so we can diagnose without a web inspector)
+window.onerror=function(msg,src,line,col,err){
+  try{
+    let d=document.getElementById('errBanner');
+    if(!d){ d=document.createElement('div'); d.id='errBanner'; d.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#3a0d0d;color:#ffb3a6;font:11px monospace;padding:8px 10px;white-space:pre-wrap;max-height:40%;overflow:auto;'; document.body.appendChild(d); }
+    d.textContent='JS error: '+msg+'\n@ line '+line+':'+col+(err&&err.stack?('\n'+err.stack.split('\n').slice(0,3).join('\n')):'');
+  }catch(_){}
+  return false;
+};
+
 /* ── Firestore paths ── */
 function fsPath(sub){ return fbDb.doc('timeslice/users/'+fbUser.uid+'/'+sub); }
 function fsCol(sub){  return fbDb.collection('timeslice/users/'+fbUser.uid+'/'+sub); }
@@ -1142,10 +1211,11 @@ function gRestore(){
   const t=localStorage.getItem('ts_tok'); const exp=parseInt(localStorage.getItem('ts_exp')||'0',10); const sc=localStorage.getItem('ts_scope');
   if(t && Date.now()<exp-60000){ 
     gtoken=t;
-    // Try to restore Firebase session from the stored Google token too
     if(!fbUser){
-      const cred=firebase.auth.GoogleAuthProvider.credential(null, t);
-      fbAuth.signInWithCredential(cred).catch(e=>{ /* token may be expired; FB session may still persist */ });
+      try{
+        const cred=firebase.auth.GoogleAuthProvider.credential(null, t);
+        fbAuth.signInWithCredential(cred).catch(e=>{ /* token may be expired */ });
+      }catch(e){ /* ignore */ }
     }
   }
   gCalUI();
@@ -1181,8 +1251,10 @@ function gHandleRedirect(){
   localStorage.setItem('ts_exp',String(Date.now()+(parseInt(exp||'3600',10))*1000));
   localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
   // Sign into Firebase using the same Google access token — no second redirect needed
-  const cred=firebase.auth.GoogleAuthProvider.credential(null, tok);
-  fbAuth.signInWithCredential(cred).catch(e=>console.error('fb credential sign-in',e));
+  try{
+    const cred=firebase.auth.GoogleAuthProvider.credential(null, tok);
+    fbAuth.signInWithCredential(cred).catch(e=>console.error('fb credential sign-in',e));
+  }catch(e){ console.error('fb credential build',e); }
   return true;
 }
 function gResumePending(){
@@ -1220,10 +1292,8 @@ function save(){
 }
 
 /* ─── Override setPalettes / setTrees / setHotBtns to push to Firestore ─── */
-const _origSetPalettes = setPalettes;
-function setPalettes(a){ _origSetPalettes(a); if(fbUser) fsSaveConfig(); }
-const _origSetTrees = setTrees;
-function setTrees(a){ _origSetTrees(a); }     // trees come FROM TimeTrap; don't push from TimeSlice
+function setPalettes(a){ _setPalettesLocal(a); if(fbUser) fsSaveConfig(); }
+function setTrees(a){ _setTreesLocal(a); }     // trees come FROM TimeTrap; don't push from TimeSlice
 
 /* ─── Update fsListenSlices when date changes ─── */
 const _origSetDate = setDate;
@@ -1294,21 +1364,41 @@ document.getElementById('hotSaveBtn').addEventListener('click', saveHotBtn);
 document.getElementById('hotClose').addEventListener('click', closeHot);
 document.getElementById('hotBack').addEventListener('click',()=>{ hotView='cats'; renderHot(); });
 
+/* ---------- color editor wiring ---------- */
+(function(){
+  const byId=id=>document.getElementById(id);
+  if(byId('btnColors')) byId('btnColors').addEventListener('click', ()=>{ sheet.classList.remove('open'); openColors(); });
+  if(byId('colorClose')) byId('colorClose').addEventListener('click', closeColors);
+  if(byId('colorBack')) byId('colorBack').addEventListener('click', closeColors);
+  ['cBg','cText','cD0','cD1','cD2','cD3'].forEach(id=>{ if(byId(id)) byId(id).addEventListener('input', ()=>{ applyPalette(curPalette()); save(); }); });
+  if(byId('cAlpha')) byId('cAlpha').addEventListener('input', ()=>{ byId('cAlphaVal').textContent=byId('cAlpha').value+'%'; applyPalette(curPalette()); save(); });
+  if(byId('palSaveBtn')) byId('palSaveBtn').addEventListener('click', ()=>{
+    const nameEl=byId('palName'); const name=(nameEl.value||'').trim();
+    if(!name){ nameEl.focus(); return; }
+    const arr=getPalettes(); const p=curPalette(); p.name=name;
+    const ex=arr.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
+    if(ex>=0) arr[ex]=p; else arr.push(p);
+    setPalettes(arr); nameEl.value=''; renderPalettes();
+  });
+})();
+
 /* ---------- boot ---------- */
-load();
-(function(){ const t=getTrees(); if(t) applyTrees(t); })();
-applyPalette(state.palette || DEFAULT_PALETTE);
-applyMinimal();
-const tsJustAuthed = gHandleRedirect();
-gRestore(); gCalUI();
-(function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this URL as an Authorized redirect URI in Google Cloud: '+gRedirectUri(); })();
-if(tsJustAuthed){ gStatus('Calendar connected.','ok'); gResumePending(); }
-document.body.style.background = COLORS.bg;
+try{
+  load();
+  (function(){ const t=getTrees(); if(t) applyTrees(t); })();
+  applyPalette(state.palette || DEFAULT_PALETTE);
+  applyMinimal();
+  const tsJustAuthed = gHandleRedirect();
+  gRestore(); gCalUI();
+  (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this URL as an Authorized redirect URI in Google Cloud: '+gRedirectUri(); })();
+  if(tsJustAuthed){ gStatus('Calendar connected.','ok'); gResumePending(); }
+  document.body.style.background = COLORS.bg;
+}catch(e){ console.error('boot error',e); if(window.onerror) window.onerror('boot: '+e.message,'',0,0,e); }
 // Layout after DOM has painted — multiple passes handle slow Firebase init
 safeLayout();
 setTimeout(safeLayout, 500);
 setTimeout(safeLayout, 1500);
-(function loop(){ draw(); requestAnimationFrame(loop); })();
+(function loop(){ try{ draw(); }catch(e){} requestAnimationFrame(loop); })();
 </script>
 </body>
 </html>
