@@ -186,7 +186,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.38</span></h2>
+    <h2>TimeSlice<span class="ver">v1.39</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1086,6 +1086,7 @@ function fsListenSlices(){
 }
 
 /* ── Firebase auth state ── */
+let fbAuthReady=false;
 function fbAuthUI(){
   const el=document.getElementById('fbAuthStatus');
   const btn=document.getElementById('btnFbSignIn');
@@ -1097,31 +1098,28 @@ function fbAuthUI(){
   } else {
     if(el) el.textContent='Not signed in';
     if(btn){ btn.textContent='Sign in'; btn.onclick=fbSignIn; }
-    if(lp){
+    if(lp && fbAuthReady){   // only show after Firebase has confirmed there's no session
       const hasCid=!!localStorage.getItem('ts_cid');
       if(hasCid){
-        // Client ID already saved — soft non-blocking prompt at bottom, hamburger still reachable
         lp.classList.remove('show'); lp.classList.add('soft');
       } else {
-        // True first use — full overlay so they know they need to set up
         lp.classList.remove('soft'); lp.classList.add('show');
       }
     }
   }
 }
 function fbSignIn(){
-  // Use our own proven Google redirect (same one Calendar uses) — hands token to Firebase on return
-  // Needs a Client ID; show that field if not set yet
-  const cid=localStorage.getItem('ts_cid');
-  if(!cid){ 
-    sheet.classList.add('open');
-    const cr=document.getElementById('cidRow'); if(cr) cr.style.display='flex';
-    gStatus('Enter your Client ID above, then tap Sign in with Google again.','err');
+  let cid=localStorage.getItem('ts_cid');
+  if(!cid){
+    // No Client ID yet — show it in the settings sheet
+    const el=document.getElementById('fbAuthStatus');
+    if(el) el.textContent='Open settings → Calendar export, enter your Client ID, then sign in.';
     return;
   }
-  localStorage.setItem('ts_ostate', Math.random().toString(36).slice(2)+Date.now().toString(36));
+  const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  localStorage.setItem('ts_ostate', st);
   localStorage.setItem('ts_pending', JSON.stringify({type:'fbsignin'}));
-  const p=new URLSearchParams({ client_id:cid, redirect_uri:gRedirectUri(), response_type:'token', scope:GSCOPE, include_granted_scopes:'true', state:localStorage.getItem('ts_ostate'), prompt:'select_account' });
+  const p=new URLSearchParams({ client_id:cid, redirect_uri:gRedirectUri(), response_type:'token', scope:GSCOPE, include_granted_scopes:'true', state:st, prompt:'select_account' });
   window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?'+p.toString();
 }
 document.getElementById('loginPopBtn').addEventListener('click', fbSignIn);
@@ -1129,6 +1127,7 @@ document.getElementById('btnFbSignIn').addEventListener('click', ()=>{ if(fbUser
 
 fbAuth.onAuthStateChanged(async user=>{
   fbUser=user;
+  fbAuthReady=true;    // Firebase has now confirmed session state
   fbAuthUI();
   if(user){
     await fsLoadAll();
