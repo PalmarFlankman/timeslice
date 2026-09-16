@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.46</span></h2>
+    <h2>TimeSlice<span class="ver">v1.47</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -225,25 +225,15 @@ body{
         <button class="ghostbtn" id="btnCopyDay">Copy text</button>
       </div>
     </div>
-    <div class="row" id="syncRow">
-      <div style="flex:1">Cross-device sync<div class="sub" id="syncStatus">Slices sync on their own. Send pushes this device up; Receive pulls the cloud down.</div></div>
-      <div style="display:flex;gap:8px;flex-shrink:0;">
-        <button class="ghostbtn" id="btnSyncSend">↑ Send</button>
-        <button class="ghostbtn" id="btnSyncGet">↓ Receive</button>
-      </div>
-    </div>
+
     <div id="expStatus" class="sub" style="margin-top:6px;min-height:16px;"></div>
     <div class="row" id="colorsRow">
       <div>Colors &amp; palettes<div class="sub">Background, text &amp; calendar colors</div></div>
       <button class="ghostbtn" id="btnColors">Edit</button>
     </div>
-    <div class="row" id="catsRow">
-      <div>Categories<div class="sub">Pull divisions &amp; categories from TimeTrap</div></div>
-      <button class="ghostbtn" id="btnCats">Import</button>
-    </div>
+
   </div>
 
-  <div id="loginPop"><button id="loginPopBtn">Connect&nbsp;Google</button></div>
   <div id="editorBack"></div>
   <div id="editor">
     <button id="edFlame" title="Hot buttons"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></button>
@@ -1026,11 +1016,9 @@ function gStatus(m,kind){ const s=document.getElementById('expStatus'); if(!s)re
 function gClearToken(){ localStorage.removeItem('ts_tok'); localStorage.removeItem('ts_exp'); localStorage.removeItem('ts_scope'); gtoken=null; }
 function gAuthedUI(){
   const on=!!gtoken;
-  const ar=document.getElementById('authRow'), cr=document.getElementById('cidRow');
-  if(ar) ar.style.display = on?'none':'flex';
-  if(cr) cr.style.display = on?'none':'flex';
-  const b=document.getElementById('gconnect'); if(b) b.textContent = on?'Connected':'Connect';
-  const lp=document.getElementById('loginPop'); if(lp) lp.style.display = on?'none':'block';
+  const cr=document.getElementById('cidRow');
+  if(cr) cr.style.display=on?'none':'flex';
+  const b=document.getElementById('gconnect'); if(b) b.textContent=on?'Connected':'Connect';
 }
 function gRestore(){
   const c=localStorage.getItem('ts_cid'); const el=document.getElementById('gcid'); if(c&&el) el.value=c;
@@ -1632,7 +1620,7 @@ document.getElementById('hotClose').addEventListener('click', closeHot);
 document.getElementById('hotBack').addEventListener('click', ()=>{ hotView='cats'; renderHot(); });
 
 /* ---------- login popup (centered, shown when not connected) ---------- */
-function updateLoginPop(){ const el=document.getElementById('loginPop'); if(el) el.style.display = gtoken ? 'none' : 'block'; }
+
 document.getElementById('loginPopBtn').addEventListener('click', gConnect);
 ed('editorBack').addEventListener('click', closeEditor);
 ed('edSave').addEventListener('click', ()=>{
@@ -1751,7 +1739,7 @@ function applyTrees(arr){
 }
 function openCats(){ const st=document.getElementById('catStatus'); if(st) st.textContent=''; document.getElementById('catBack').classList.add('open'); document.getElementById('catPanel').classList.add('open'); }
 function closeCats(){ document.getElementById('catBack').classList.remove('open'); document.getElementById('catPanel').classList.remove('open'); }
-document.getElementById('btnCats').addEventListener('click', ()=>{ sheet.classList.remove('open'); openCats(); });
+
 document.getElementById('catClose').addEventListener('click', closeCats);
 document.getElementById('catBack').addEventListener('click', closeCats);
 document.getElementById('catImportBtn').addEventListener('click', ()=>{
@@ -1775,18 +1763,18 @@ applyMinimal();          // sets zoom visibility + date label, then lays out
 const tsJustAuthed = gHandleRedirect();   // catch #access_token returning from Google
 gRestore();              // restore Google auth state if still valid
 (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
-document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
-document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
+
+
 if(tsJustAuthed){ gAuthedUI(); gStatus('Calendar connected.','ok'); gResumePending();
   // Also sign into Firebase using the same Google token — one redirect, both auth paths
   const _fbCred=firebase.auth.GoogleAuthProvider.credential(null,gtoken);
   fbAuth.signInWithCredential(_fbCred).catch(e=>console.error('fb cred',e));
 }
-updateLoginPop();
-if(gtoken){ gSlicesPull(); gHotPull(); gCatsPull(); }    // slices + hot buttons + categories auto-sync; palettes via Receive
-setInterval(gAutoPull, 20000);                                           // keep slices fresh every 20s while open
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ gAutoPull(); gCatsPull(); } });
-window.addEventListener('focus', ()=>{ gAutoPull(); gCatsPull(); });
+
+// Drive sync disabled — Firebase handles sync
+// Drive polling disabled — Firebase real-time listeners handle this
+
+
 let lastPullAt=0;
 function maybePullSlices(){
   if(!gtoken) return;
@@ -1794,9 +1782,9 @@ function maybePullSlices(){
   if(now-lastPullAt < 4000) return;   // throttle bursts
   lastPullAt=now; gSlicesPull();
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') maybePullSlices(); });
-window.addEventListener('focus', maybePullSlices);
-setInterval(()=>{ if(document.visibilityState==='visible') maybePullSlices(); }, 30000);   // refresh every 30s while open
+
+
+
 document.body.style.background = COLORS.bg;
 setTimeout(layout, 300);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
