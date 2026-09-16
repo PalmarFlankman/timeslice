@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.47</span></h2>
+    <h2>TimeSlice<span class="ver">v1.48</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -204,15 +204,11 @@ body{
       <div>Clear today's slices<div class="sub">Remove every anchor on this day</div></div>
       <button class="ghostbtn" id="btnClear">Clear</button>
     </div>
-    <div class="row">
-      <div style="flex:1">Account<div class="sub" id="fbAuthStatus">Checking…</div></div>
-      <button class="ghostbtn" id="btnFbSignIn">Sign in</button>
-    </div>
     <div class="row" id="authRow">
-      <div style="flex:1">Calendar export<div class="sub">Connect to write events to Google</div></div>
-      <button class="ghostbtn" id="gconnect">Connect</button>
+      <div style="flex:1">Google account<div class="sub" id="fbAuthStatus">Not signed in</div></div>
+      <button class="ghostbtn" id="btnFbSignIn">Sign in with Google</button>
     </div>
-    <div class="row" id="cidRow">
+    <div class="row" id="cidRow" style="display:none">
       <div style="width:100%">
         <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
         <div class="sub" id="redirHint" style="margin-top:7px;word-break:break-all;line-height:1.5;"></div>
@@ -1018,12 +1014,11 @@ function gAuthedUI(){
   const on=!!gtoken;
   const cr=document.getElementById('cidRow');
   if(cr) cr.style.display=on?'none':'flex';
-  const b=document.getElementById('gconnect'); if(b) b.textContent=on?'Connected':'Connect';
 }
 function gRestore(){
   const c=localStorage.getItem('ts_cid'); const el=document.getElementById('gcid'); if(c&&el) el.value=c;
   const t=localStorage.getItem('ts_tok'); const exp=parseInt(localStorage.getItem('ts_exp')||'0',10); const sc=localStorage.getItem('ts_scope');
-  if(t && sc===GSCOPE && Date.now()<exp-60000){ gtoken=t; }
+  if(t && Date.now()<exp-60000){ gtoken=t; }   // scope check removed — GSCOPE may have changed
   gAuthedUI();
 }
 const GAUTH_EP='https://accounts.google.com/o/oauth2/v2/auth';
@@ -1178,23 +1173,35 @@ function fsListenConfig(){
 
 function fbAuthUI(){
   const el=document.getElementById('fbAuthStatus'), btn=document.getElementById('btnFbSignIn');
+  const cr=document.getElementById('cidRow');
   if(fbUser){
-    if(el) el.textContent='Signed in as '+fbUser.email;
-    if(btn){ btn.textContent='Sign out'; btn.onclick=()=>fbAuth.signOut(); }
+    if(el) el.textContent=fbUser.email+(gtoken?' · Calendar connected':' · Calendar not connected');
+    if(btn){ btn.textContent='Sign out'; btn.onclick=()=>{ fbAuth.signOut(); gClearToken(); gAuthedUI(); }; }
+    if(cr) cr.style.display='none';
   } else {
     if(el) el.textContent='Not signed in';
-    if(btn){ btn.textContent='Sign in'; btn.onclick=fbSignIn; }
+    if(btn){ btn.textContent='Sign in with Google'; btn.onclick=fbSignIn; }
+    // show Client ID field if no cid saved yet
+    const hasCid=!!localStorage.getItem('ts_cid');
+    if(cr) cr.style.display=hasCid?'none':'flex';
   }
 }
 function fbSignIn(){
   const cid=localStorage.getItem('ts_cid');
-  if(!cid){ gStatus('Open settings → Calendar export, enter your Client ID first.','err'); return; }
+  if(!cid){
+    // No Client ID yet — show field so they can enter it, then they tap Sign in again
+    const cr=document.getElementById('cidRow'); if(cr) cr.style.display='flex';
+    const el=document.getElementById('fbAuthStatus'); if(el) el.textContent='Enter your Client ID below, then tap Sign in with Google.';
+    return;
+  }
   const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
   localStorage.setItem('ts_ostate',st);
   const p=new URLSearchParams({client_id:cid,redirect_uri:gRedirectUri(),response_type:'token',scope:GSCOPE,include_granted_scopes:'true',state:st,prompt:'select_account'});
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+p.toString();
 }
 document.getElementById('btnFbSignIn').addEventListener('click',()=>{ if(fbUser) fbAuth.signOut(); else fbSignIn(); });
+// Save Client ID from cidRow input as user types
+(function(){ const el=document.getElementById('gcid'); if(el) el.addEventListener('input',()=>{ const v=el.value.trim(); if(v) localStorage.setItem('ts_cid',v); }); })();
 
 fbAuth.onAuthStateChanged(async user=>{
   fbUser=user; fbAuthUI();
@@ -1409,7 +1416,7 @@ async function exportSeg(seg){
   if(r.status===401){ gClearToken(); gAuthedUI(); return {ok:false,msg:'Session expired — Connect again.'}; }
   return r.ok ? {ok:true} : {ok:false,msg:'Google rejected the event ('+r.status+').'};
 }
-document.getElementById('gconnect').addEventListener('click', gConnect);
+// gconnect button removed — sign-in now unified
 document.getElementById('btnExport').addEventListener('click', exportDay);
 function dayTextSummary(){
   const segs = daySegs().filter(s=>s.ev && (s.ev.title||s.ev.cat||s.ev.sub));
