@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.49</span></h2>
+    <h2>TimeSlice<span class="ver">v1.50</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1774,17 +1774,21 @@ gRestore();              // restore Google auth state if still valid
 
 
 if(tsJustAuthed){
+  dbgLog('redirect: got token, gtoken set');
   gAuthedUI();
-  // Firebase: use the access token to sign in
-  // signInWithCredential with access_token works for Google provider
   const _fbCred=firebase.auth.GoogleAuthProvider.credential(null,gtoken);
   fbAuth.signInWithCredential(_fbCred)
-    .then(r=>{ const el=document.getElementById('fbAuthStatus'); if(el&&r.user) el.textContent=r.user.email+' · Calendar connected'; })
+    .then(r=>{ 
+      dbgLog('fb cred OK: '+(r.user?r.user.email:'?'));
+      const el=document.getElementById('fbAuthStatus'); if(el&&r.user) el.textContent=r.user.email+' · Calendar connected';
+    })
     .catch(e=>{
-      console.error('fb cred error',e.code,e.message);
+      dbgLog('fb cred ERR: '+e.code+' '+e.message.slice(0,60));
       const el=document.getElementById('fbAuthStatus'); if(el) el.textContent='Calendar connected (Firebase: '+e.code+')';
     });
   gResumePending();
+} else {
+  dbgLog('redirect: no token (hash='+location.hash.slice(0,30)+')');
 }
 
 // Drive sync disabled — Firebase handles sync
@@ -1802,8 +1806,25 @@ function maybePullSlices(){
 
 
 document.body.style.background = COLORS.bg;
-// Call layout at multiple points — Firebase async init means we can't rely on one timeout
-requestAnimationFrame(()=>{ layout(); requestAnimationFrame(layout); });
+
+/* ── DEBUG overlay — shows exactly what's happening ── */
+(function(){
+  const dbg=document.createElement('div');
+  dbg.id='tsDbg';
+  dbg.style.cssText='position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:8px;z-index:999;max-height:40vh;overflow:auto;white-space:pre-wrap;';
+  document.body.appendChild(dbg);
+  window.dbgLog=function(msg){ dbg.textContent+='\n'+msg; dbg.scrollTop=dbg.scrollHeight; };
+  window.onerror=function(msg,src,line){ dbgLog('JS ERR: '+msg+' @'+line); };
+  dbgLog('boot: v1.49 hash='+location.hash.slice(0,40));
+  dbgLog('localStorage ts_tok='+(localStorage.getItem('ts_tok')?'SET':'null'));
+  dbgLog('localStorage ts_cid='+(localStorage.getItem('ts_cid')||'null').slice(0,20));
+  dbgLog('GSCOPE prefix='+GSCOPE.slice(0,30));
+  dbgLog('barTop='+barTop+' barBot='+barBot+' W='+W+' H='+H);
+})();
+
+fbAuth.onAuthStateChanged(function(u){ dbgLog('fbAuth state: '+(u?u.email:'null')); });
+
+requestAnimationFrame(()=>{ layout(); requestAnimationFrame(()=>{ layout(); dbgLog('post-layout: barTop='+barTop+' barBot='+barBot); }); });
 setTimeout(layout, 400);
 setTimeout(layout, 1200);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
