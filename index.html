@@ -152,8 +152,10 @@ body{
 #hotBody .hotname{flex:1;font-size:14px;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #hotBody .hotx{color:var(--dim);cursor:pointer;font-size:16px;padding:0 2px;}
 #hotBody .hot-empty{font-size:12px;color:var(--dim);padding:6px 0 2px;}
-#loginPop{position:absolute;inset:0;background:rgba(0,0,0,0.65);z-index:30;display:none;align-items:center;justify-content:center;}
-#loginPop.show{display:flex;}
+#loginPop{position:absolute;inset:0;background:rgba(0,0,0,0.65);z-index:30;display:none;align-items:center;justify-content:center;pointer-events:none;}
+#loginPop.show{display:flex;pointer-events:auto;}
+#loginPop.soft{display:flex;background:transparent;pointer-events:none;align-items:flex-end;justify-content:center;padding-bottom:90px;}
+#loginPop.soft #loginCard{pointer-events:auto;padding:14px 20px;border-radius:14px;}
 #loginCard{background:var(--bg);border:2px solid var(--text);border-radius:18px;padding:28px 32px;text-align:center;font-family:inherit;}
 #loginPopBtn{background:none;border:2px solid var(--text);color:var(--text);font-family:inherit;font-size:15px;font-weight:500;padding:12px 24px;border-radius:12px;cursor:pointer;}
 #loginPopBtn:active{opacity:0.7;}
@@ -184,7 +186,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.37</span></h2>
+    <h2>TimeSlice<span class="ver">v1.38</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -227,8 +229,7 @@ body{
 
   <div id="loginPop">
     <div id="loginCard">
-      <div style="font-size:15px;margin-bottom:6px;color:var(--text);">TimeSlice</div>
-      <div style="font-size:12px;color:var(--dim);margin-bottom:18px;">Sign in to sync your data</div>
+      <div style="font-size:13px;color:var(--dim);margin-bottom:10px;">Tap to sign in and sync your data</div>
       <button id="loginPopBtn">Sign in with Google</button>
     </div>
   </div>
@@ -1092,11 +1093,20 @@ function fbAuthUI(){
   if(fbUser){
     if(el) el.textContent='Signed in as '+fbUser.email;
     if(btn){ btn.textContent='Sign out'; btn.onclick=()=>fbAuth.signOut(); }
-    if(lp) lp.classList.remove('show');
+    if(lp){ lp.classList.remove('show'); lp.classList.remove('soft'); }
   } else {
     if(el) el.textContent='Not signed in';
     if(btn){ btn.textContent='Sign in'; btn.onclick=fbSignIn; }
-    if(lp) lp.classList.add('show');
+    if(lp){
+      const hasCid=!!localStorage.getItem('ts_cid');
+      if(hasCid){
+        // Client ID already saved — soft non-blocking prompt at bottom, hamburger still reachable
+        lp.classList.remove('show'); lp.classList.add('soft');
+      } else {
+        // True first use — full overlay so they know they need to set up
+        lp.classList.remove('soft'); lp.classList.add('show');
+      }
+    }
   }
 }
 function fbSignIn(){
