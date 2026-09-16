@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.45</span></h2>
+    <h2>TimeSlice<span class="ver">v1.46</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1114,13 +1114,15 @@ let fsSliceTimer=null;
 function fsSaveSlices(){
   if(!fbUser) return;
   const key=dayKey(state.date);
-  fsPath('slices/'+key).set({segs:state.segsByDay[key]||[],ts:Date.now()}).catch(e=>console.error('fs slice',e));
+  const ts=Date.now(); fsLastWriteTs=ts;
+  fsPath('slices/'+key).set({segs:state.segsByDay[key]||[],ts}).catch(e=>console.error('fs slice',e));
 }
 function scheduleSliceSave(){ clearTimeout(fsSliceTimer); fsSliceTimer=setTimeout(fsSaveSlices,1500); }
 
 function fsSaveConfig(){
   if(!fbUser) return;
-  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').set({palette:state.palette||DEFAULT_PALETTE,palettes:getPalettes(),trees:getTrees()||null,ts:Date.now()}).catch(e=>console.error('fs cfg',e));
+  const ts=Date.now(); state._configTs=ts;
+  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').set({palette:state.palette||DEFAULT_PALETTE,palettes:getPalettes(),trees:getTrees()||null,ts}).catch(e=>console.error('fs cfg',e));
 }
 function fsSaveHotBtns(){
   if(!fbUser) return;
@@ -1132,23 +1134,31 @@ async function fsLoadAll(){
   try{
     const cfg=await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').get();
     if(cfg.exists){
-      const d=cfg.data();
+      const d=cfg.data(); state._configTs=d.ts||0;
       if(Array.isArray(d.palettes)) setPalettes(d.palettes);
       if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; }
       if(Array.isArray(d.trees)&&d.trees.length){ setTrees(d.trees); applyTrees(d.trees); }
+    } else {
+      // Nothing in Firestore yet — seed it from local state
+      fsSaveConfig();
     }
     const hb=await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').get();
     if(hb.exists&&Array.isArray(hb.data().items)) setHotBtns(dedupeHot(hb.data().items));
     const today=dayKey(state.date); const yd=new Date(state.date); yd.setDate(yd.getDate()-1);
     for(const k of [today,dayKey(yd)]){
       const doc=await fsPath('slices/'+k).get();
-      if(doc.exists&&Array.isArray(doc.data().segs)) state.segsByDay[k]=doc.data().segs;
+      if(doc.exists&&Array.isArray(doc.data().segs)){
+        // Only overwrite local if Firestore is newer
+        const localTs=parseInt(localStorage.getItem('ts_slices_at_'+k)||'0',10);
+        if((doc.data().ts||0)>localTs) state.segsByDay[k]=doc.data().segs;
+      }
     }
   }catch(e){ console.error('fsLoadAll',e); }
+  fsListenConfig();   // start real-time config listener (palette sync across devices)
   setTimeout(layout,100);
 }
 
-let fsSliceUnsub=null;
+let fsSliceUnsub=null, fsConfigUnsub=null, fsLastWriteTs=0;
 function fsListenSlices(){
   if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; }
   if(!fbUser) return;
@@ -1156,8 +1166,26 @@ function fsListenSlices(){
   fsSliceUnsub=fsPath('slices/'+key).onSnapshot(snap=>{
     if(!snap.exists) return;
     const d=snap.data();
-    if(Array.isArray(d.segs)){ fbApplyingRemote=true; try{ state.segsByDay[key]=d.segs; }finally{ fbApplyingRemote=false; } }
+    // Only apply if Firestore timestamp is newer than our last local write
+    if(Array.isArray(d.segs) && (d.ts||0) > fsLastWriteTs){
+      fbApplyingRemote=true;
+      try{ state.segsByDay[key]=d.segs; }finally{ fbApplyingRemote=false; }
+    }
   },e=>console.error('fs listen',e));
+}
+function fsListenConfig(){
+  if(fsConfigUnsub){ fsConfigUnsub(); fsConfigUnsub=null; }
+  if(!fbUser) return;
+  fsConfigUnsub=fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const d=snap.data();
+    // Only apply if newer than current state (cross-device update)
+    if(!d.ts || d.ts <= (state._configTs||0)) return;
+    state._configTs=d.ts;
+    if(Array.isArray(d.palettes)) { try{ localStorage.setItem('ts_palettes',JSON.stringify(d.palettes)); }catch(e){} }
+    if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; }
+    if(Array.isArray(d.trees)&&d.trees.length){ setTrees(d.trees); applyTrees(d.trees); }
+  },e=>console.error('fs cfg listen',e));
 }
 
 function fbAuthUI(){
@@ -1183,12 +1211,23 @@ document.getElementById('btnFbSignIn').addEventListener('click',()=>{ if(fbUser)
 fbAuth.onAuthStateChanged(async user=>{
   fbUser=user; fbAuthUI();
   if(user){ await fsLoadAll(); fsListenSlices(); }
-  else { if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; } }
+  else {
+    if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; }
+    if(fsConfigUnsub){ fsConfigUnsub(); fsConfigUnsub=null; }
+  }
 });
 
 /* ── Hooks: tie existing functions to Firestore ── */
 const _origSaveForFb=save;
-function save(){ _origSaveForFb(); if(fbUser&&!fbApplyingRemote) scheduleSliceSave(); }
+function save(){
+  _origSaveForFb();
+  if(fbUser&&!fbApplyingRemote){
+    // stamp local timestamp so fsLoadAll won't overwrite fresh local data
+    const k=dayKey(state.date);
+    const ts=Date.now(); try{ localStorage.setItem('ts_slices_at_'+k,String(ts)); }catch(e){}
+    scheduleSliceSave();
+  }
+}
 const _origSetPalettesForFb=setPalettes;
 function setPalettes(a){ _origSetPalettesForFb(a); if(fbUser) fsSaveConfig(); }
 const _origSetHotBtnsForFb=setHotBtns;
