@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.51</span></h2>
+    <h2>TimeSlice<span class="ver">v1.52</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -208,7 +208,7 @@ body{
       <div style="flex:1">Google account<div class="sub" id="fbAuthStatus">Not signed in</div></div>
       <button class="ghostbtn" id="btnFbSignIn">Sign in with Google</button>
     </div>
-    <div class="row" id="cidRow" style="display:none">
+    <div class="row" id="cidRow">
       <div style="width:100%">
         <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
         <div class="sub" id="redirHint" style="margin-top:7px;word-break:break-all;line-height:1.5;"></div>
@@ -301,21 +301,7 @@ body{
 </div>
 
 <script>
-/* DEBUG — created first so it catches any crash */
-(function(){
-  const dbg=document.createElement('div');
-  dbg.id='tsDbg';
-  dbg.style.cssText='position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font:11px/1.4 monospace;padding:8px 10px;z-index:9999;max-height:45vh;overflow-y:auto;white-space:pre-wrap;pointer-events:auto;';
-  document.body.appendChild(dbg);
-  window.dbgLog=function(msg){ dbg.textContent+='\n'+new Date().toLocaleTimeString()+' '+msg; dbg.scrollTop=9999; };
-  window.onerror=function(msg,src,line,col){ dbgLog('ERR: '+msg+' @'+line+':'+col); return false; };
-  window.addEventListener('unhandledrejection',function(e){ dbgLog('PROMISE ERR: '+(e.reason&&e.reason.message||e.reason)); });
-  dbgLog('script start — v1.51');
-  dbgLog('firebase defined: '+(typeof firebase!=='undefined'));
-  dbgLog('hash: '+location.hash.slice(0,50)||'(none)');
-  dbgLog('ts_cid: '+(localStorage.getItem('ts_cid')||'(none)').slice(0,30));
-  dbgLog('ts_tok: '+(localStorage.getItem('ts_tok')?'SET':'(none)'));
-})();
+/* debug removed */
 
 /* ============================================================
    TimeSlice v0.1 — core time bar
@@ -438,7 +424,7 @@ function deleteBoundary(bi){
 }
 
 /* ---------- storage ---------- */
-function save(){
+function _baseSave(){
   try{
     localStorage.setItem('ts_state', JSON.stringify({
       segsByDay: state.segsByDay,
@@ -1230,22 +1216,17 @@ fbAuth.onAuthStateChanged(async user=>{
 });
 
 /* ── Hooks: tie existing functions to Firestore ── */
-const _origSaveForFb=save;
 function save(){
-  _origSaveForFb();
-  if(fbUser&&!fbApplyingRemote){
-    // stamp local timestamp so fsLoadAll won't overwrite fresh local data
+  _baseSave();
+  if(typeof fbUser!=='undefined' && fbUser && !fbApplyingRemote){
     const k=dayKey(state.date);
     const ts=Date.now(); try{ localStorage.setItem('ts_slices_at_'+k,String(ts)); }catch(e){}
     scheduleSliceSave();
   }
 }
-const _origSetPalettesForFb=setPalettes;
-function setPalettes(a){ _origSetPalettesForFb(a); if(fbUser) fsSaveConfig(); }
-const _origSetHotBtnsForFb=setHotBtns;
-function setHotBtns(a){ _origSetHotBtnsForFb(a); if(fbUser) fsSaveHotBtns(); }
-const _origSetDateForFb=setDate;
-function setDate(d){ _origSetDateForFb(d); if(fbUser) fsListenSlices(); }
+function setPalettes(a){ _basSetPalettes(a); if(typeof fbUser!=='undefined'&&fbUser) fsSaveConfig(); }
+function setHotBtns(a){ _basSetHotBtns(a); if(typeof fbUser!=='undefined'&&fbUser) fsSaveHotBtns(); }
+
 
 /* ---------- cross-device sync (Google Drive app-data) ----------
    Two files: SLICES auto-sync (last-edit-wins); CONFIG (palettes + categories)
@@ -1645,7 +1626,7 @@ document.getElementById('hotBack').addEventListener('click', ()=>{ hotView='cats
 
 /* ---------- login popup (centered, shown when not connected) ---------- */
 
-document.getElementById('loginPopBtn').addEventListener('click', gConnect);
+// loginPopBtn removed
 ed('editorBack').addEventListener('click', closeEditor);
 ed('edSave').addEventListener('click', ()=>{
   const segs = daySegs();
@@ -1675,7 +1656,7 @@ ed('edDelete').addEventListener('click', ()=>{ const segs=daySegs(); if(edSegIdx
 
 /* ---------- colors + palettes ---------- */
 function getPalettes(){ try{ return JSON.parse(localStorage.getItem('ts_palettes')||'[]'); }catch(e){ return []; } }
-function setPalettes(a){ try{ localStorage.setItem('ts_palettes', JSON.stringify(a)); }catch(e){} }
+function _basSetPalettes(a){ try{ localStorage.setItem('ts_palettes', JSON.stringify(a)); }catch(e){} }
 function curPalette(){
   const t = +document.getElementById('cAlpha').value;   // % transparent
   return {
@@ -1822,8 +1803,6 @@ function maybePullSlices(){
 
 
 document.body.style.background = COLORS.bg;
-dbgLog('boot: barTop='+barTop+' barBot='+barBot+' W='+W+' H='+H);
-fbAuth.onAuthStateChanged(function(u){ dbgLog('fbAuth: '+(u?u.email:'null')); });
 
 requestAnimationFrame(()=>{ layout(); requestAnimationFrame(()=>{ layout(); dbgLog('post-layout: barTop='+barTop+' barBot='+barBot); }); });
 setTimeout(layout, 400);
