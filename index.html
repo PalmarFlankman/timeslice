@@ -184,7 +184,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.35</span></h2>
+    <h2>TimeSlice<span class="ver">v1.36</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1101,10 +1101,15 @@ function fbAuthUI(){
 }
 function fbSignIn(){
   const provider=new firebase.auth.GoogleAuthProvider();
-  fbAuth.signInWithPopup(provider).catch(e=>{ console.error('fb sign in',e); });
+  firebase.auth().signInWithRedirect(provider).catch(e=>{ console.error('fb sign in',e); });
 }
 document.getElementById('loginPopBtn').addEventListener('click', fbSignIn);
 document.getElementById('btnFbSignIn').addEventListener('click', ()=>{ if(fbUser) fbAuth.signOut(); else fbSignIn(); });
+
+fbAuth.getRedirectResult().then(result=>{
+  // handles the return after sign-in redirect; onAuthStateChanged fires immediately after
+  if(result && result.user) console.log('fb redirect sign-in complete');
+}).catch(e=>{ console.error('fb redirect result',e); });
 
 fbAuth.onAuthStateChanged(async user=>{
   fbUser=user;
