@@ -180,7 +180,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.43</span></h2>
+    <h2>TimeSlice<span class="ver">v1.44</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -410,7 +410,7 @@ function save(){
       palette: state.palette
     }));
   }catch(e){}
-  if(typeof scheduleSync==='function' && !applyingRemote) scheduleSync();
+  if(typeof fbUser !== 'undefined' && fbUser && !applyingRemote) scheduleSliceSave();
 }
 function migrate(s){
   const out = {};
@@ -1083,7 +1083,7 @@ function fsPath(sub){ return fbDb.doc('timeslice/users/'+fbUser.uid+'/'+sub); }
 function fsCol(sub){  return fbDb.collection('timeslice/users/'+fbUser.uid+'/'+sub); }
 
 /* ── Save to Firestore (debounced for slices, immediate for config) ── */
-let fsSliceTimer=null;
+let fsSliceTimer=null, applyingRemote=false;
 function fsSaveSlices(){
   if(!fbUser) return;
   const key=dayKey(state.date);
@@ -1282,22 +1282,13 @@ function resolveCalId(div,calMap){
 }
 document.getElementById('gconnect').addEventListener('click', gConnect);
 
-/* ═══════════════════════════════════════════════════════════
-   OVERRIDE save() to also schedule Firestore slice write
-   ═══════════════════════════════════════════════════════════ */
-const _origSave = save;
-function save(){
-  _origSave();
-  if(fbUser){ state._localTs=Date.now(); scheduleSliceSave(); }
-}
-
-/* ─── Override setPalettes / setTrees / setHotBtns to push to Firestore ─── */
+/* ─── setPalettes / setTrees push to Firestore ─── */
 function setPalettes(a){ _setPalettesLocal(a); if(fbUser) fsSaveConfig(); }
 function setTrees(a){ _setTreesLocal(a); }     // trees come FROM TimeTrap; don't push from TimeSlice
 
 /* ─── Update fsListenSlices when date changes ─── */
 const _origSetDate = setDate;
-function setDate(d){ _origSetDate(d); if(fbUser) fsListenSlices(); }
+function setDate(d){ _origSetDate(d); if(typeof fbUser!=='undefined' && fbUser) fsListenSlices(); }
 
 /* ---------- hot buttons ---------- */
 function getHotBtns(){ try{ return JSON.parse(localStorage.getItem('ts_hotbtns')||'[]'); }catch(e){ return []; } }
