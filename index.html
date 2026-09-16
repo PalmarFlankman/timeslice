@@ -82,7 +82,16 @@ body{
 /* colors modal */
 #colorBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:22;}
 #colorBack.open{opacity:1;pointer-events:auto;}
-
+#catBack{position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:22;}
+#catBack.open{opacity:1;pointer-events:auto;}
+#catPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,90%);
+  background:var(--bg);border:2px solid var(--text);border-radius:18px;
+  padding:20px 22px;z-index:23;opacity:0;pointer-events:none;transition:opacity .2s;max-height:86%;overflow:auto;}
+#catPanel.open{opacity:1;pointer-events:auto;}
+#catPanel h3{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:500;margin-bottom:14px;}
+#catClose{position:absolute;top:14px;right:18px;font-size:20px;color:var(--dim);cursor:pointer;line-height:1;}
+#catPaste{width:100%;font-family:inherit;font-size:12px;color:var(--text);background:rgba(0,0,0,0.25);border:1px solid rgba(191,227,181,0.25);border-radius:9px;padding:9px 10px;outline:none;resize:vertical;}
+#catPaste::placeholder{color:var(--dim);opacity:0.6;}
 #colorPanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,90%);
   background:var(--bg);border:2px solid var(--text);border-radius:18px;
   padding:20px 22px;z-index:23;opacity:0;pointer-events:none;transition:opacity .2s;max-height:86%;overflow:auto;}
@@ -152,7 +161,9 @@ body{
 #hotBody .hotname{flex:1;font-size:14px;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #hotBody .hotx{color:var(--dim);cursor:pointer;font-size:16px;padding:0 2px;}
 #hotBody .hot-empty{font-size:12px;color:var(--dim);padding:6px 0 2px;}
-
+#loginPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;display:none;}
+#loginPop button{background:var(--bg);border:2px solid #ff4133;color:#ff4133;font-family:inherit;font-size:16px;font-weight:500;padding:15px 26px;border-radius:16px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,0.35);}
+#loginPop button:active{opacity:0.7;}
 #edTime{font-size:16px;color:var(--text);margin-bottom:14px;letter-spacing:1px;}
 #editor label{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:12px 0 5px;}
 #editor input,#editor select,#editor textarea{width:100%;font-family:inherit;font-size:15px;color:var(--text);
@@ -180,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.44</span></h2>
+    <h2>TimeSlice<span class="ver">v1.45</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -193,15 +204,15 @@ body{
       <div>Clear today's slices<div class="sub">Remove every anchor on this day</div></div>
       <button class="ghostbtn" id="btnClear">Clear</button>
     </div>
-    <div class="row" id="authRow">
-      <div style="flex:1">Account<div class="sub" id="fbAuthStatus">Not signed in</div></div>
+    <div class="row">
+      <div style="flex:1">Account<div class="sub" id="fbAuthStatus">Checking…</div></div>
       <button class="ghostbtn" id="btnFbSignIn">Sign in</button>
     </div>
-    <div class="row">
-      <div style="flex:1">Calendar export<div class="sub">Connect Google Calendar to export events</div></div>
+    <div class="row" id="authRow">
+      <div style="flex:1">Calendar export<div class="sub">Connect to write events to Google</div></div>
       <button class="ghostbtn" id="gconnect">Connect</button>
     </div>
-    <div class="row" id="cidRow" style="display:none;">
+    <div class="row" id="cidRow">
       <div style="width:100%">
         <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
         <div class="sub" id="redirHint" style="margin-top:7px;word-break:break-all;line-height:1.5;"></div>
@@ -214,13 +225,25 @@ body{
         <button class="ghostbtn" id="btnCopyDay">Copy text</button>
       </div>
     </div>
+    <div class="row" id="syncRow">
+      <div style="flex:1">Cross-device sync<div class="sub" id="syncStatus">Slices sync on their own. Send pushes this device up; Receive pulls the cloud down.</div></div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        <button class="ghostbtn" id="btnSyncSend">↑ Send</button>
+        <button class="ghostbtn" id="btnSyncGet">↓ Receive</button>
+      </div>
+    </div>
     <div id="expStatus" class="sub" style="margin-top:6px;min-height:16px;"></div>
     <div class="row" id="colorsRow">
       <div>Colors &amp; palettes<div class="sub">Background, text &amp; calendar colors</div></div>
       <button class="ghostbtn" id="btnColors">Edit</button>
     </div>
+    <div class="row" id="catsRow">
+      <div>Categories<div class="sub">Pull divisions &amp; categories from TimeTrap</div></div>
+      <button class="ghostbtn" id="btnCats">Import</button>
+    </div>
   </div>
 
+  <div id="loginPop"><button id="loginPopBtn">Connect&nbsp;Google</button></div>
   <div id="editorBack"></div>
   <div id="editor">
     <button id="edFlame" title="Hot buttons"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></button>
@@ -276,6 +299,18 @@ body{
       <button class="ghostbtn" id="palSaveBtn">Save</button>
     </div>
     <div id="palList"></div>
+  </div>
+
+  <div id="catBack"></div>
+  <div id="catPanel">
+    <span id="catClose">&times;</span>
+    <h3>Import categories</h3>
+    <div class="sub" style="margin-bottom:10px;line-height:1.5;">In TimeTrap, tap “Copy for TimeSlice”, then paste here and Import. This replaces the category lists; your colors and saved events are untouched.</div>
+    <textarea id="catPaste" rows="5" placeholder="Paste the TimeTrap categories blob…" autocomplete="off" spellcheck="false"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+      <button class="ghostbtn" id="catImportBtn">Import</button>
+      <span id="catStatus" class="sub" style="flex:1;"></span>
+    </div>
   </div>
 </div>
 
@@ -410,7 +445,7 @@ function save(){
       palette: state.palette
     }));
   }catch(e){}
-  if(typeof fbUser !== 'undefined' && fbUser && !applyingRemote) scheduleSliceSave();
+  if(typeof scheduleSync==='function' && !applyingRemote) scheduleSync();
 }
 function migrate(s){
   const out = {};
@@ -440,12 +475,6 @@ function load(){
 /* ---------- geometry ---------- */
 let W=0,H=0,dpr=1,originX=0,originY=0;
 let barTop=0, barBot=0, barX=0, barW=20;
-function safeLayout(){
-  requestAnimationFrame(()=>{
-    layout();
-    requestAnimationFrame(layout);
-  });
-}
 function layout(){
   dpr = window.devicePixelRatio || 1;
   const st = document.getElementById('stage');
@@ -742,65 +771,6 @@ function applyPalette(p){
   state.palette = { bg:p.bg, text:p.text, divs:p.divs.slice(), alpha:(p.alpha!=null?p.alpha:1) };
 }
 
-/* ---------- palette + category storage (restored) ---------- */
-function getPalettes(){ try{ return JSON.parse(localStorage.getItem('ts_palettes')||'[]'); }catch(e){ return []; } }
-function _setPalettesLocal(a){ try{ localStorage.setItem('ts_palettes', JSON.stringify(a)); }catch(e){} }
-function getTrees(){ try{ return JSON.parse(localStorage.getItem('ts_trees')||'null'); }catch(e){ return null; } }
-function _setTreesLocal(a){ try{ localStorage.setItem('ts_trees', JSON.stringify(a)); }catch(e){} }
-function normPfx(p){ return String(p||'').trim().toLowerCase(); }
-function applyTrees(arr){
-  if(!Array.isArray(arr)) return 0;
-  let n=0;
-  arr.forEach(d=>{
-    if(!d || !Array.isArray(d.tree)) return;
-    let idx=CONFIG.divisions.findIndex(x=>normPfx(x.prefix)===normPfx(d.prefix));
-    if(idx<0) idx=CONFIG.divisions.findIndex(x=>(x.name||'').toLowerCase()===(d.name||'').toLowerCase());
-    if(idx<0) return;
-    CONFIG.divisions[idx].tree = d.tree.map(c=>({cat:String(c.cat||c.category||''), subs:Array.isArray(c.subs)?c.subs.map(String):[]})).filter(c=>c.cat);
-    if(d.name) CONFIG.divisions[idx].name = d.name;
-    if(d.calName) CONFIG.divisions[idx].calName = d.calName;
-    if(d.calId) CONFIG.divisions[idx].calId = d.calId;
-    n++;
-  });
-  return n;
-}
-/* ---------- color editor (restored) ---------- */
-function curPalette(){
-  const t = +document.getElementById('cAlpha').value;
-  return {
-    bg:   document.getElementById('cBg').value,
-    text: document.getElementById('cText').value,
-    divs:[0,1,2,3].map(i=>document.getElementById('cD'+i).value),
-    alpha: 1 - t/100
-  };
-}
-function fillColorInputs(p){
-  document.getElementById('cBg').value   = p.bg;
-  document.getElementById('cText').value = p.text;
-  [0,1,2,3].forEach(i=>{ document.getElementById('cD'+i).value = p.divs[i] || DEFAULT_PALETTE.divs[i]; });
-  const t = Math.round((1-(p.alpha!=null?p.alpha:1))*100);
-  document.getElementById('cAlpha').value = t;
-  document.getElementById('cAlphaVal').textContent = t+'%';
-  const labs = document.querySelectorAll('#cgrid label');
-  CONFIG.divisions.forEach((d,i)=>{ const lab=labs[2+i]; if(lab){ lab.childNodes[0].nodeValue=(d.calName||(d.calId&&d.calId.indexOf('@')<0?d.calId:d.name)); } });
-}
-function renderPalettes(){
-  const list=document.getElementById('palList'); const arr=getPalettes(); list.innerHTML='';
-  if(!arr.length){ list.innerHTML='<div class="palempty">No saved palettes yet.</div>'; return; }
-  arr.forEach((p,i)=>{
-    const row=document.createElement('div'); row.className='palrow';
-    const sw=document.createElement('div'); sw.className='sw';
-    [p.bg,p.text,...p.divs].forEach(c=>{ const b=document.createElement('i'); b.style.background=c; sw.appendChild(b); });
-    const nm=document.createElement('div'); nm.className='pn'; nm.textContent=p.name;
-    nm.addEventListener('click', ()=>{ applyPalette({bg:p.bg,text:p.text,divs:p.divs.slice(),alpha:p.alpha}); fillColorInputs(state.palette); save(); });
-    const x=document.createElement('div'); x.className='px'; x.textContent='\u00d7';
-    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); });
-    row.appendChild(sw); row.appendChild(nm); row.appendChild(x); list.appendChild(row);
-  });
-}
-function openColors(){ fillColorInputs(state.palette || DEFAULT_PALETTE); renderPalettes(); document.getElementById('colorBack').classList.add('open'); document.getElementById('colorPanel').classList.add('open'); }
-function closeColors(){ document.getElementById('colorBack').classList.remove('open'); document.getElementById('colorPanel').classList.remove('open'); }
-
 /* ---------- snapping ---------- */
 function nearestAnchor(t){
   const ty = timeToY(t);
@@ -1050,199 +1020,50 @@ document.getElementById('btnReset').addEventListener('click', ()=>{ state.detach
 document.getElementById('btnClear').addEventListener('click', ()=>{ state.segsByDay[dayKey(state.date)]=[{start:0,end:DAY_MIN,ev:null}]; save(); sheet.classList.remove('open'); });
 
 /* ---------- Google auth + export ---------- */
-/* GSCOPE defined below in Calendar OAuth section */
-/* ═══════════════════════════════════════════════════════════
-   FIREBASE — Auth (Google sign-in) + Firestore (data sync)
-   Google OAuth (Calendar write only) is separate below.
-   ═══════════════════════════════════════════════════════════ */
-const FB_CFG = {
-  apiKey:"AIzaSyA-XluNt-UGvvZuqm_3UoJkadLN-Y9E9J8",
-  authDomain:"orkid-96a6c.firebaseapp.com",
-  projectId:"orkid-96a6c",
-  storageBucket:"orkid-96a6c.firebasestorage.app",
-  messagingSenderId:"85346857538",
-  appId:"1:85346857538:web:09f2a1dddcc3d1958233db"
-};
-firebase.initializeApp(FB_CFG);
-const fbAuth = firebase.auth();
-const fbDb   = firebase.firestore();
-let fbUser   = null;          // signed-in Firebase user (or null)
-
-// On-screen error surface (so we can diagnose without a web inspector)
-window.onerror=function(msg,src,line,col,err){
-  try{
-    let d=document.getElementById('errBanner');
-    if(!d){ d=document.createElement('div'); d.id='errBanner'; d.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#3a0d0d;color:#ffb3a6;font:11px monospace;padding:8px 10px;white-space:pre-wrap;max-height:40%;overflow:auto;'; document.body.appendChild(d); }
-    d.textContent='JS error: '+msg+'\n@ line '+line+':'+col+(err&&err.stack?('\n'+err.stack.split('\n').slice(0,3).join('\n')):'');
-  }catch(_){}
-  return false;
-};
-
-/* ── Firestore paths ── */
-function fsPath(sub){ return fbDb.doc('timeslice/users/'+fbUser.uid+'/'+sub); }
-function fsCol(sub){  return fbDb.collection('timeslice/users/'+fbUser.uid+'/'+sub); }
-
-/* ── Save to Firestore (debounced for slices, immediate for config) ── */
-let fsSliceTimer=null, applyingRemote=false;
-function fsSaveSlices(){
-  if(!fbUser) return;
-  const key=dayKey(state.date);
-  fsPath('slices/'+key).set({ segs: state.segsByDay[key]||[], ts: Date.now() }).catch(e=>console.error('fs slice write',e));
-}
-function scheduleSliceSave(){
-  clearTimeout(fsSliceTimer);
-  fsSliceTimer=setTimeout(fsSaveSlices, 1500);
-}
-function fsSaveConfig(){
-  if(!fbUser) return;
-  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').set({
-    palette:state.palette||DEFAULT_PALETTE,
-    palettes:getPalettes(),
-    trees:getTrees()||null,
-    ts:Date.now()
-  }).catch(e=>console.error('fs config write',e));
-}
-function fsSaveHotBtns(){
-  if(!fbUser) return;
-  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').set({ items:getHotBtns(), ts:Date.now() }).catch(e=>console.error('fs hotbtns write',e));
-}
-
-/* ── Load from Firestore on sign-in ── */
-async function fsLoadAll(){
-  if(!fbUser) return;
-  try{
-    // config (palette, palettes, trees)
-    const cfg = await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').get();
-    if(cfg.exists){
-      const d=cfg.data();
-      if(d.palettes) setPalettes(d.palettes);
-      if(d.palette && d.palette.bg) applyPalette(d.palette);
-      if(Array.isArray(d.trees) && d.trees.length){ setTrees(d.trees); applyTrees(d.trees); }
-    }
-    // hot buttons
-    const hb = await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').get();
-    if(hb.exists && Array.isArray(hb.data().items)) setHotBtns(dedupeHot(hb.data().items));
-    // slices for today + yesterday
-    const today=dayKey(state.date);
-    const yd=new Date(state.date); yd.setDate(yd.getDate()-1);
-    const yesterday=dayKey(yd);
-    for(const k of [today,yesterday]){
-      const doc=await fsPath('slices/'+k).get();
-      if(doc.exists && Array.isArray(doc.data().segs)) state.segsByDay[k]=doc.data().segs;
-    }
-  }catch(e){ console.error('fsLoadAll',e); }
-  // Re-apply palette + layout now that Firestore data is in
-  applyPalette(state.palette || DEFAULT_PALETTE);
-  document.body.style.background = COLORS.bg;
-  safeLayout();
-}
-
-/* ── Real-time listener on today's slices ── */
-let fsSliceUnsub=null;
-function fsListenSlices(){
-  if(fsSliceUnsub) fsSliceUnsub();
-  if(!fbUser) return;
-  const key=dayKey(state.date);
-  fsSliceUnsub=fsPath('slices/'+key).onSnapshot(snap=>{
-    if(!snap.exists) return;
-    const d=snap.data();
-    if(Array.isArray(d.segs) && d.ts && d.ts > (state._localTs||0)){
-      state.segsByDay[key]=d.segs;
-    }
-  }, e=>console.error('fs slice listen',e));
-}
-
-/* ── Firebase auth state ── */
-let fbAuthReady=false;
-function fbAuthUI(){
-  const el=document.getElementById('fbAuthStatus');
-  const btn=document.getElementById('btnFbSignIn');
-  if(fbUser){
-    if(el) el.textContent='Signed in as '+fbUser.email;
-    if(btn){ btn.textContent='Sign out'; btn.onclick=()=>fbAuth.signOut(); }
-  } else {
-    if(el) el.textContent=fbAuthReady?'Not signed in':'Checking…';
-    if(btn){ btn.textContent='Sign in'; btn.onclick=fbSignIn; }
-  }
-}
-function fbSignIn(){
-  let cid=localStorage.getItem('ts_cid');
-  if(!cid){
-    // No Client ID yet — show it in the settings sheet
-    const el=document.getElementById('fbAuthStatus');
-    if(el) el.textContent='Open settings → Calendar export, enter your Client ID, then sign in.';
-    return;
-  }
-  const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
-  localStorage.setItem('ts_ostate', st);
-  localStorage.setItem('ts_pending', JSON.stringify({type:'fbsignin'}));
-  const p=new URLSearchParams({ client_id:cid, redirect_uri:gRedirectUri(), response_type:'token', scope:GSCOPE, include_granted_scopes:'true', state:st, prompt:'select_account' });
-  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?'+p.toString();
-}
-document.getElementById('btnFbSignIn').addEventListener('click', ()=>{ if(fbUser) fbAuth.signOut(); else fbSignIn(); });
-
-fbAuth.onAuthStateChanged(async user=>{
-  fbUser=user;
-  fbAuthReady=true;
-  fbAuthUI();
-  layout();   // ensure bar renders whether signed in or not
-  if(user){
-    await fsLoadAll();
-    fsListenSlices();
-  } else {
-    if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; }
-  }
-});
-
-/* ═══════════════════════════════════════════════════════════
-   GOOGLE CALENDAR OAUTH — only for exporting events
-   ═══════════════════════════════════════════════════════════ */
 const GSCOPE='openid email profile https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events';
-let gtoken=null, gPendingFn=null;
+let gtoken=null, gtokenClient=null, gPending=false, gPendingExport=false, gPendingFn=null;
 function gStatus(m,kind){ const s=document.getElementById('expStatus'); if(!s)return; s.textContent=m||''; s.style.color = kind==='err'?'#ff8a6b' : kind==='ok'?'#aede5c' : 'var(--dim)'; }
 function gClearToken(){ localStorage.removeItem('ts_tok'); localStorage.removeItem('ts_exp'); localStorage.removeItem('ts_scope'); gtoken=null; }
-function gCalUI(){
-  const b=document.getElementById('gconnect'); if(!b) return;
-  b.textContent = gtoken?'Connected':'Connect';
-  const cr=document.getElementById('cidRow'); if(cr) cr.style.display=gtoken?'none':'flex';
+function gAuthedUI(){
+  const on=!!gtoken;
+  const ar=document.getElementById('authRow'), cr=document.getElementById('cidRow');
+  if(ar) ar.style.display = on?'none':'flex';
+  if(cr) cr.style.display = on?'none':'flex';
+  const b=document.getElementById('gconnect'); if(b) b.textContent = on?'Connected':'Connect';
+  const lp=document.getElementById('loginPop'); if(lp) lp.style.display = on?'none':'block';
 }
 function gRestore(){
   const c=localStorage.getItem('ts_cid'); const el=document.getElementById('gcid'); if(c&&el) el.value=c;
   const t=localStorage.getItem('ts_tok'); const exp=parseInt(localStorage.getItem('ts_exp')||'0',10); const sc=localStorage.getItem('ts_scope');
-  if(t && Date.now()<exp-60000){ 
-    gtoken=t;
-    if(!fbUser){
-      try{
-        const cred=firebase.auth.GoogleAuthProvider.credential(null, t);
-        fbAuth.signInWithCredential(cred).catch(e=>{ /* token may be expired */ });
-      }catch(e){ /* ignore */ }
-    }
-  }
-  gCalUI();
+  if(t && sc===GSCOPE && Date.now()<exp-60000){ gtoken=t; }
+  gAuthedUI();
 }
 const GAUTH_EP='https://accounts.google.com/o/oauth2/v2/auth';
 function gRedirectUri(){ return location.origin + location.pathname; }
 function gBeginAuth(pending){
   let cid=(document.getElementById('gcid').value||'').replace(/\s+/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\/+$/,'');
-  const m=cid.match(/[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com/);
+  const m=cid.match(/[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com/);   // pull the real ID out of any wrapper
   if(m) cid=m[0];
-  document.getElementById('gcid').value=cid;
-  if(!cid){ gStatus('Enter your Calendar Client ID first.','err'); const cr=document.getElementById('cidRow'); if(cr) cr.style.display='flex'; return; }
-  if(!/\.apps\.googleusercontent\.com$/.test(cid)){ gStatus('Client ID should end with .apps.googleusercontent.com','err'); return; }
+  document.getElementById('gcid').value = cid;   // reflect the cleaned value back
+  if(!cid){ gStatus('Enter your Client ID first.','err'); return; }
+  if(!/\.apps\.googleusercontent\.com$/.test(cid)){ gStatus('That Client ID looks incomplete — it should end with .apps.googleusercontent.com','err'); return; }
   localStorage.setItem('ts_cid',cid);
   const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
   localStorage.setItem('ts_ostate',st);
-  if(pending){ try{ localStorage.setItem('ts_pending',JSON.stringify(pending)); }catch(e){} }
+  if(pending){ try{ localStorage.setItem('ts_pending', JSON.stringify(pending)); }catch(e){} }
   else localStorage.removeItem('ts_pending');
-  const p=new URLSearchParams({ client_id:cid, redirect_uri:gRedirectUri(), response_type:'token', scope:GSCOPE, include_granted_scopes:'true', state:st, prompt:'consent' });
-  window.location.href = GAUTH_EP+'?'+p.toString();
+  const p=new URLSearchParams({
+    client_id:cid, redirect_uri:gRedirectUri(), response_type:'token',
+    scope:GSCOPE, include_granted_scopes:'true', state:st, prompt:'consent'
+  });
+  window.location.href = GAUTH_EP+'?'+p.toString();   // full-page redirect (works in standalone PWAs)
 }
-function gConnect(){ const cr=document.getElementById('cidRow'); if(cr) cr.style.display='flex'; gBeginAuth(null); }
+function gConnect(){ gBeginAuth(null); }
 function gHandleRedirect(){
   if(!location.hash || location.hash.indexOf('access_token')<0) return false;
   const h=new URLSearchParams(location.hash.replace(/^#/,''));
   const tok=h.get('access_token'), exp=h.get('expires_in'), st=h.get('state');
-  history.replaceState(null,'',location.origin+location.pathname+location.search);
+  history.replaceState(null,'',location.origin+location.pathname+location.search);  // strip token from URL
   const want=localStorage.getItem('ts_ostate'); localStorage.removeItem('ts_ostate');
   if(!tok) return false;
   if(want && st && st!==want) return false;
@@ -1250,62 +1071,478 @@ function gHandleRedirect(){
   localStorage.setItem('ts_tok',tok);
   localStorage.setItem('ts_exp',String(Date.now()+(parseInt(exp||'3600',10))*1000));
   localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
-  // Sign into Firebase using the same Google access token — no second redirect needed
-  try{
-    const cred=firebase.auth.GoogleAuthProvider.credential(null, tok);
-    fbAuth.signInWithCredential(cred).catch(e=>console.error('fb credential sign-in',e));
-  }catch(e){ console.error('fb credential build',e); }
   return true;
 }
 function gResumePending(){
   let p=null; try{ p=JSON.parse(localStorage.getItem('ts_pending')||'null'); }catch(e){}
   localStorage.removeItem('ts_pending');
-  if(!p || p.type==='fbsignin') return;   // fbsignin handled by gHandleRedirect → signInWithCredential
+  if(!p) return;
   try{
     if(p.date){ const a=String(p.date).split('-'); if(a.length===3) setDate(new Date(+a[0],+a[1]-1,+a[2])); }
     if(p.type==='day'){ sheet.classList.add('open'); exportDay(); }
-    else if(p.type==='seg'){ const segs=daySegs(); const idx=segs.findIndex(s=>s.ev&&s.start===p.start); if(idx>=0){ openEditorForTime(segs[idx].start); doSegExport(daySegs()[idx]); } }
+    else if(p.type==='seg'){ const segs=daySegs(); const idx=segs.findIndex(s=>s.ev && s.start===p.start); if(idx>=0){ openEditorForTime(segs[idx].start); doSegExport(daySegs()[idx]); } }
   }catch(e){}
 }
 async function gListCalMap(){
   const res=await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=100',{headers:{Authorization:'Bearer '+gtoken}});
-  if(res.status===401){ gClearToken(); gCalUI(); throw new Error('Session expired — Connect again.'); }
+  if(res.status===401){ gClearToken(); gAuthedUI(); throw new Error('Session expired — Connect again.'); }
   if(!res.ok) throw new Error('calendarList '+res.status);
   const data=await res.json();
   const map={}; (data.items||[]).forEach(c=>{ map[c.summary]=c.id; });
   return map;
 }
-function resolveCalId(div,calMap){
-  if(!div||!div.calId) return null;
-  if(calMap[div.calId]) return calMap[div.calId];
-  return div.calId;
+function resolveCalId(div, calMap){
+  if(!div || !div.calId) return null;
+  if(calMap[div.calId]) return calMap[div.calId];   // calId is a calendar name/summary → use its id
+  return div.calId;                                  // calId is already a real Google calendar id (from TimeTrap import)
+}
+
+/* ═══════════════════════════════════════════════
+   FIREBASE — Auth + Firestore (primary data store)
+   Google OAuth redirect used for both Firebase sign-in
+   and Calendar export. Drive sync below is superseded.
+   ═══════════════════════════════════════════════ */
+const FB_CFG={apiKey:"AIzaSyA-XluNt-UGvvZuqm_3UoJkadLN-Y9E9J8",authDomain:"orkid-96a6c.firebaseapp.com",projectId:"orkid-96a6c",storageBucket:"orkid-96a6c.firebasestorage.app",messagingSenderId:"85346857538",appId:"1:85346857538:web:09f2a1dddcc3d1958233db"};
+firebase.initializeApp(FB_CFG);
+const fbAuth=firebase.auth();
+const fbDb=firebase.firestore();
+let fbUser=null, fbApplyingRemote=false;
+
+function fsPath(sub){ return fbDb.doc('timeslice/users/'+fbUser.uid+'/'+sub); }
+
+let fsSliceTimer=null;
+function fsSaveSlices(){
+  if(!fbUser) return;
+  const key=dayKey(state.date);
+  fsPath('slices/'+key).set({segs:state.segsByDay[key]||[],ts:Date.now()}).catch(e=>console.error('fs slice',e));
+}
+function scheduleSliceSave(){ clearTimeout(fsSliceTimer); fsSliceTimer=setTimeout(fsSaveSlices,1500); }
+
+function fsSaveConfig(){
+  if(!fbUser) return;
+  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').set({palette:state.palette||DEFAULT_PALETTE,palettes:getPalettes(),trees:getTrees()||null,ts:Date.now()}).catch(e=>console.error('fs cfg',e));
+}
+function fsSaveHotBtns(){
+  if(!fbUser) return;
+  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').set({items:getHotBtns(),ts:Date.now()}).catch(e=>console.error('fs hot',e));
+}
+
+async function fsLoadAll(){
+  if(!fbUser) return;
+  try{
+    const cfg=await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').get();
+    if(cfg.exists){
+      const d=cfg.data();
+      if(Array.isArray(d.palettes)) setPalettes(d.palettes);
+      if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; }
+      if(Array.isArray(d.trees)&&d.trees.length){ setTrees(d.trees); applyTrees(d.trees); }
+    }
+    const hb=await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').get();
+    if(hb.exists&&Array.isArray(hb.data().items)) setHotBtns(dedupeHot(hb.data().items));
+    const today=dayKey(state.date); const yd=new Date(state.date); yd.setDate(yd.getDate()-1);
+    for(const k of [today,dayKey(yd)]){
+      const doc=await fsPath('slices/'+k).get();
+      if(doc.exists&&Array.isArray(doc.data().segs)) state.segsByDay[k]=doc.data().segs;
+    }
+  }catch(e){ console.error('fsLoadAll',e); }
+  setTimeout(layout,100);
+}
+
+let fsSliceUnsub=null;
+function fsListenSlices(){
+  if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; }
+  if(!fbUser) return;
+  const key=dayKey(state.date);
+  fsSliceUnsub=fsPath('slices/'+key).onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const d=snap.data();
+    if(Array.isArray(d.segs)){ fbApplyingRemote=true; try{ state.segsByDay[key]=d.segs; }finally{ fbApplyingRemote=false; } }
+  },e=>console.error('fs listen',e));
+}
+
+function fbAuthUI(){
+  const el=document.getElementById('fbAuthStatus'), btn=document.getElementById('btnFbSignIn');
+  if(fbUser){
+    if(el) el.textContent='Signed in as '+fbUser.email;
+    if(btn){ btn.textContent='Sign out'; btn.onclick=()=>fbAuth.signOut(); }
+  } else {
+    if(el) el.textContent='Not signed in';
+    if(btn){ btn.textContent='Sign in'; btn.onclick=fbSignIn; }
+  }
+}
+function fbSignIn(){
+  const cid=localStorage.getItem('ts_cid');
+  if(!cid){ gStatus('Open settings → Calendar export, enter your Client ID first.','err'); return; }
+  const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  localStorage.setItem('ts_ostate',st);
+  const p=new URLSearchParams({client_id:cid,redirect_uri:gRedirectUri(),response_type:'token',scope:GSCOPE,include_granted_scopes:'true',state:st,prompt:'select_account'});
+  window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+p.toString();
+}
+document.getElementById('btnFbSignIn').addEventListener('click',()=>{ if(fbUser) fbAuth.signOut(); else fbSignIn(); });
+
+fbAuth.onAuthStateChanged(async user=>{
+  fbUser=user; fbAuthUI();
+  if(user){ await fsLoadAll(); fsListenSlices(); }
+  else { if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; } }
+});
+
+/* ── Hooks: tie existing functions to Firestore ── */
+const _origSaveForFb=save;
+function save(){ _origSaveForFb(); if(fbUser&&!fbApplyingRemote) scheduleSliceSave(); }
+const _origSetPalettesForFb=setPalettes;
+function setPalettes(a){ _origSetPalettesForFb(a); if(fbUser) fsSaveConfig(); }
+const _origSetHotBtnsForFb=setHotBtns;
+function setHotBtns(a){ _origSetHotBtnsForFb(a); if(fbUser) fsSaveHotBtns(); }
+const _origSetDateForFb=setDate;
+function setDate(d){ _origSetDateForFb(d); if(fbUser) fsListenSlices(); }
+
+/* ---------- cross-device sync (Google Drive app-data) ----------
+   Two files: SLICES auto-sync (last-edit-wins); CONFIG (palettes + categories)
+   moves only when you tap Send / Receive, so editing slices never disturbs palettes. */
+const SLICE_FILE='timeslice-slices.json';
+const CONFIG_FILE='timeslice-config.json';
+let sliceFileId=null, configFileId=null, syncTimer=null, applyingRemote=false, syncReady=false, lastSyncError='';
+function syncStatus(m){ const e=document.getElementById('syncStatus'); if(e) e.textContent=m||'Slices sync on their own. Send pushes this device up; Receive pulls the cloud down.'; }
+
+async function driveFind(name){
+  const q=encodeURIComponent("name='"+name+"' and trashed=false");
+  const r=await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields=files(id)',{headers:{Authorization:'Bearer '+gtoken}});
+  if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+  if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive find '+r.status+': '+t.slice(0,200)); }
+  const d=await r.json(); const f=(d.files||[])[0]; return f?f.id:null;
+}
+async function driveDownload(id){
+  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+gtoken}});
+  if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+  if(!r.ok) throw new Error('drive get '+r.status);
+  return await r.json();
+}
+async function driveUpload(name, fileId, blob){
+  const body=JSON.stringify(blob);
+  if(fileId){
+    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body});
+    if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+    if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive patch '+r.status+': '+t.slice(0,200)); }
+    return fileId;
+  }
+  const boundary='tsB'+Date.now();
+  const meta=JSON.stringify({name:name, parents:['appDataFolder']});
+  const multipart='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+body+'\r\n--'+boundary+'--';
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'multipart/related; boundary='+boundary},body:multipart});
+  if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('401'); }
+  if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){ } throw new Error('drive create '+r.status+': '+t.slice(0,200)); }
+  const d=await r.json(); return d.id;
+}
+
+/* --- slices: automatic, last-edit-wins --- */
+function sliceBlob(){
+  let t=parseInt(localStorage.getItem('ts_slices_at')||'0',10);
+  if(!t){ t=Date.now(); localStorage.setItem('ts_slices_at',String(t)); }
+  return { v:1, updatedAt:t, segsByDay:state.segsByDay };
+}
+async function gSlicesPull(){
+  if(!gtoken) return;
+  try{
+    const id=await driveFind(SLICE_FILE);
+    if(id){
+      sliceFileId=id;
+      const remote=await driveDownload(id);
+      const localT=parseInt(localStorage.getItem('ts_slices_at')||'0',10);
+      if((remote.updatedAt||0) > localT && remote.segsByDay){
+        applyingRemote=true;
+        try{ state.segsByDay=remote.segsByDay; save(); } finally { applyingRemote=false; }
+        localStorage.setItem('ts_slices_at', String(remote.updatedAt));
+      } else if((remote.updatedAt||0) < localT){
+        sliceFileId=await driveUpload(SLICE_FILE, sliceFileId, sliceBlob());
+      }
+    } else {
+      sliceFileId=await driveUpload(SLICE_FILE, null, sliceBlob());
+    }
+    lastSyncError='';
+  }catch(e){ const m=e.message||String(e); lastSyncError=m; if(m==='401') syncStatus('Reconnect to sync'); console.error('slices pull', e); }
+  finally { syncReady=true; }
+}
+function scheduleSync(){      // fired by save() on slice changes only
+  if(!gtoken || !syncReady) return;
+  localStorage.setItem('ts_slices_at', String(Date.now()));
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(gSlicesPush, 2500);
+}
+async function gSlicesPush(){
+  if(!gtoken) return;
+  try{ if(sliceFileId===null) sliceFileId=await driveFind(SLICE_FILE); sliceFileId=await driveUpload(SLICE_FILE, sliceFileId, sliceBlob()); lastSyncError=''; }
+  catch(e){ const m=e.message||String(e); lastSyncError=m; console.error('slices push', e); }
+}
+function gAutoPull(){
+  if(!gtoken || !syncReady || document.hidden) return;
+  if(pointers.size>0 || gesture) return;                                  // don't disrupt an active gesture
+  const ed=document.getElementById('editor');
+  if(ed && ed.classList.contains('open')) return;                         // don't yank slices mid-edit
+  gSlicesPull();
+}
+
+/* --- config (palettes + categories): manual Send / Receive --- */
+function configBlob(){ return { v:1, updatedAt:Date.now(), palettes:getPalettes(), palette:state.palette, trees:(getTrees()||null) }; }
+async function gForcePush(){      // Send: this device's palettes -> cloud (categories are owned by TimeTrap, so preserve them)
+  if(!gtoken){ gStatus('Connect Google first.','err'); return; }
+  syncStatus('Sending…');
+  try{
+    if(configFileId===null) configFileId=await driveFind(CONFIG_FILE);
+    let remote={}; if(configFileId){ try{ remote=await driveDownload(configFileId); }catch(e){} }
+    const keepTrees = (Array.isArray(remote.trees) && remote.trees.length) ? remote.trees : (getTrees()||null);
+    configFileId=await driveUpload(CONFIG_FILE, configFileId, { v:1, updatedAt:Date.now(), palettes:getPalettes(), palette:state.palette, trees:keepTrees });
+    lastSyncError='';
+    syncStatus('Sent ✓ — palettes pushed (categories are managed by TimeTrap).');
+  }catch(e){ lastSyncError=e.message||String(e); syncStatus('Send failed'); console.error('config push', e); alert('Send error:\n\n'+lastSyncError); }
+}
+async function gCatsPull(){       // auto: pull just the categories that TimeTrap owns
+  if(!gtoken) return;
+  try{
+    const id=await driveFind(CONFIG_FILE);
+    if(!id) return;
+    const cfg=await driveDownload(id);
+    if(Array.isArray(cfg.trees) && cfg.trees.length){
+      applyingRemote=true;
+      try{ setTrees(cfg.trees); applyTrees(cfg.trees); save(); } finally { applyingRemote=false; }
+    }
+  }catch(e){ console.error('cats pull', e); }
+}
+async function gForcePull(){      // Receive: cloud palettes/categories -> this device
+  if(!gtoken){ gStatus('Connect Google first.','err'); return; }
+  syncStatus('Receiving…');
+  try{
+    const id=await driveFind(CONFIG_FILE);
+    if(!id){ syncStatus('Nothing sent yet — tap Send on the device with the palettes first.'); return; }
+    configFileId=id;
+    const b=await driveDownload(id);
+    applyingRemote=true;
+    try{
+      if(b.trees){ setTrees(b.trees); applyTrees(b.trees); }
+      if(Array.isArray(b.palettes)) setPalettes(b.palettes);
+      if(b.palette && b.palette.bg) applyPalette(b.palette);
+      save();
+    } finally { applyingRemote=false; }
+    const cp=document.getElementById('colorPanel');
+    if(cp && cp.classList.contains('open')){ try{ renderPalettes(); fillColorInputs(state.palette||DEFAULT_PALETTE); }catch(_){} }
+    lastSyncError='';
+    syncStatus('Received ✓ — palettes & categories updated.');
+  }catch(e){ lastSyncError=e.message||String(e); syncStatus('Receive failed'); console.error('config pull', e); alert('Receive error:\n\n'+lastSyncError); }
+}
+function pad2(n){ return String(n).padStart(2,'0'); }
+function hhmm(min){ return pad2(Math.floor(min/60))+':'+pad2(min%60); }
+async function exportDay(){
+  if(!gtoken){ gBeginAuth({type:'day', date:dayKey(state.date)}); return; }
+  const segs=daySegs().filter(s=>s.ev);
+  if(!segs.length){ gStatus('No events on this day to export.','err'); return; }
+  const btn=document.getElementById('btnExport'); btn.disabled=true; gStatus('Resolving calendars…');
+  try{
+    const calMap=await gListCalMap();
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const baseKey=dayKey(state.date);
+    let ok=0, fail=0, skip=0;
+    for(const sg of segs){
+      const div=CONFIG.divisions[sg.ev.divIdx];
+      const calId=div ? resolveCalId(div,calMap) : null;
+      if(!calId){ skip++; continue; }
+      const tag=buildTag(sg.ev.divIdx, sg.ev.cat, sg.ev.sub);
+      const description=[tag, sg.ev.note].filter(Boolean).join('\n');
+      const summary=sg.ev.title || sg.ev.sub || sg.ev.cat || '(untitled)';
+      const startISO=baseKey+'T'+hhmm(sg.start)+':00';
+      let endISO;
+      if(sg.end>=DAY_MIN){ const d=new Date(state.date); d.setDate(d.getDate()+1); endISO=dayKey(d)+'T00:00:00'; }
+      else endISO=baseKey+'T'+hhmm(sg.end)+':00';
+      const body={summary,description,start:{dateTime:startISO,timeZone:tz},end:{dateTime:endISO,timeZone:tz}};
+      gStatus('Creating '+(ok+fail+1)+'/'+segs.length+'…');
+      const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)+'/events',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(r.status===401){ gClearToken(); gAuthedUI(); throw new Error('Session expired mid-export — Connect again.'); }
+      if(r.ok) ok++; else fail++;
+    }
+    gStatus('✓ '+ok+' created'+(fail?(', '+fail+' failed'):'')+(skip?(', '+skip+' had no matching calendar'):''), (fail||skip)?'err':'ok');
+  }catch(e){ gStatus(e.message,'err'); }
+  finally{ btn.disabled=false; }
+}
+async function exportSeg(seg){
+  if(!seg || !seg.ev) return {ok:false,msg:'Nothing to export.'};
+  if(!gtoken) return {needAuth:true};
+  const calMap=await gListCalMap();
+  const div=CONFIG.divisions[seg.ev.divIdx];
+  const calId=div ? resolveCalId(div,calMap) : null;
+  if(!calId) return {ok:false,msg:'No matching Google calendar for '+(div?div.name:'this division')+'.'};
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const baseKey=dayKey(state.date);
+  const tag=buildTag(seg.ev.divIdx, seg.ev.cat, seg.ev.sub);
+  const description=[tag, seg.ev.note].filter(Boolean).join('\n');
+  const summary=seg.ev.title || seg.ev.sub || seg.ev.cat || '(untitled)';
+  const startISO=baseKey+'T'+hhmm(seg.start)+':00';
+  let endISO;
+  if(seg.end>=DAY_MIN){ const d=new Date(state.date); d.setDate(d.getDate()+1); endISO=dayKey(d)+'T00:00:00'; }
+  else endISO=baseKey+'T'+hhmm(seg.end)+':00';
+  const body={summary,description,start:{dateTime:startISO,timeZone:tz},end:{dateTime:endISO,timeZone:tz}};
+  const r=await fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calId)+'/events',{method:'POST',headers:{Authorization:'Bearer '+gtoken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===401){ gClearToken(); gAuthedUI(); return {ok:false,msg:'Session expired — Connect again.'}; }
+  return r.ok ? {ok:true} : {ok:false,msg:'Google rejected the event ('+r.status+').'};
 }
 document.getElementById('gconnect').addEventListener('click', gConnect);
+document.getElementById('btnExport').addEventListener('click', exportDay);
+function dayTextSummary(){
+  const segs = daySegs().filter(s=>s.ev && (s.ev.title||s.ev.cat||s.ev.sub));
+  const lines=[];
+  segs.forEach(s=>{
+    const ev=s.ev;
+    const t1=fmtCornerLine(s.start), t2=(s.end>=DAY_MIN?'12:00 AM':fmtCornerLine(s.end));
+    lines.push(t1+' - '+t2+' - '+(ev.title||ev.sub||ev.cat||''));
+    let catline='';
+    if(ev.cat && ev.sub) catline=ev.cat+' / '+ev.sub;
+    else if(ev.cat) catline=ev.cat;
+    else if(ev.sub) catline=ev.sub;
+    if(catline) lines.push(catline);
+    if(ev.note) lines.push(ev.note);          // preserves the note's own line breaks
+    lines.push('');                            // actual blank line between entries
+  });
+  return lines.join('\n').replace(/\n+$/,'');
+}
+async function copyDaySummary(){
+  const txt=dayTextSummary();
+  if(!txt.trim()){ gStatus('No events to copy for this day.','err'); return; }
+  try{ await navigator.clipboard.writeText(txt); gStatus('✓ Day summary copied to clipboard.','ok'); }
+  catch(e){ window.prompt('Copy this day summary:', txt); }
+}
+document.getElementById('btnCopyDay').addEventListener('click', copyDaySummary);
 
-/* ─── setPalettes / setTrees push to Firestore ─── */
-function setPalettes(a){ _setPalettesLocal(a); if(fbUser) fsSaveConfig(); }
-function setTrees(a){ _setTreesLocal(a); }     // trees come FROM TimeTrap; don't push from TimeSlice
+/* ---------- zoom control (desktop) ---------- */
+function zoomBy(f){
+  const center = (state.winStart+state.winEnd)/2;
+  let span = clamp((state.winEnd-state.winStart)*f, MIN_SPAN, DAY_MIN);
+  let ws = clamp(center - span/2, 0, DAY_MIN-span);
+  state.winStart = ws; state.winEnd = ws+span; save();
+}
+document.getElementById('zoomIn').addEventListener('click', ()=> zoomBy(0.7));
+document.getElementById('zoomOut').addEventListener('click', ()=> zoomBy(1/0.7));
 
-/* ─── Update fsListenSlices when date changes ─── */
-const _origSetDate = setDate;
-function setDate(d){ _origSetDate(d); if(typeof fbUser!=='undefined' && fbUser) fsListenSlices(); }
+/* ---------- event editor ---------- */
+const ed = id=>document.getElementById(id);
+let edSegIdx=-1;
 
-/* ---------- hot buttons ---------- */
+function fmtRange(s,e){ const a=fmt12(s), b=fmt12(e); return a.hm+' '+a.ap+' – '+b.hm+' '+b.ap; }
+function calLabel(d){
+  if(!d) return '';
+  if(d.calName) return d.calName;                                   // calendar name imported from TimeTrap
+  if(d.calId && d.calId.indexOf('@')<0) return d.calId;             // default config: calId is the calendar name
+  return d.name;                                                    // fallback to division name
+}
+function populateDivs(sel){
+  const s=ed('edDiv'); s.innerHTML='';
+  CONFIG.divisions.forEach((d,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=calLabel(d); s.appendChild(o); });
+  s.value = sel;
+}
+function populateCats(divIdx, selCat){
+  const s=ed('edCat'); s.innerHTML='';
+  const b=document.createElement('option'); b.value=''; b.textContent='—'; s.appendChild(b);
+  const tree = CONFIG.divisions[divIdx] ? CONFIG.divisions[divIdx].tree : [];
+  tree.forEach(c=>{ const o=document.createElement('option'); o.value=c.cat; o.textContent=c.cat; s.appendChild(o); });
+  s.value = selCat||'';
+}
+function populateSubs(divIdx, cat, selSub){
+  const s=ed('edSub'); s.innerHTML='';
+  const b=document.createElement('option'); b.value=''; b.textContent='—'; s.appendChild(b);
+  const tree = CONFIG.divisions[divIdx] ? CONFIG.divisions[divIdx].tree : [];
+  const c = tree.find(x=>x.cat===cat);
+  (c?c.subs:[]).forEach(sub=>{ const o=document.createElement('option'); o.value=sub; o.textContent=sub; s.appendChild(o); });
+  s.value = selSub||'';
+}
+function updatePreview(){
+  const divIdx=+ed('edDiv').value, cat=ed('edCat').value, sub=ed('edSub').value, note=ed('edNote').value;
+  const tag = cat ? buildTag(divIdx, cat, sub) : '';
+  ed('edPreview').textContent = (tag||'(no category)') + (note?('\n'+note):'');
+}
+function openEditorForTime(t){
+  resetGestures();
+  edSegIdx = segIndexAt(t);
+  const seg = daySegs()[edSegIdx];
+  const ev = seg.ev || {};
+  const divIdx = (ev.divIdx!=null) ? ev.divIdx : 0;
+  ed('edTime').textContent = fmtRange(seg.start, seg.end);
+  ed('edTitle').value = ev.title || '';
+  populateDivs(divIdx);
+  populateCats(divIdx, ev.cat);
+  populateSubs(divIdx, ev.cat, ev.sub);
+  ed('edNote').value = ev.note || '';
+  ed('edDelete').style.visibility = seg.ev ? 'visible' : 'hidden';
+  applyEdDivColor(divIdx);
+  edStatus('');
+  closeHot();
+  updatePreview();
+  ed('editor').classList.add('open');
+  ed('editorBack').classList.add('open');
+}
+function applyEdDivColor(d){ const div=CONFIG.divisions[d]; ed('editor').style.borderColor = (div&&div.color) || 'rgba(191,227,181,0.22)'; }
+function edStatus(msg,kind){ const el=ed('edStatus'); if(!el) return; el.textContent=msg||''; el.style.color = kind==='ok'?'#9be08a':kind==='err'?'#ff8a6b':'var(--dim)'; }
+function edBuildEv(){ return { title: ed('edTitle').value.trim(), divIdx:+ed('edDiv').value, cat:ed('edCat').value, sub:ed('edSub').value, note:ed('edNote').value }; }
+function closeEditor(){ ed('editor').classList.remove('open'); ed('editorBack').classList.remove('open'); }
+
+ed('edDiv').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateCats(d,''); populateSubs(d,'',''); applyEdDivColor(d); updatePreview(); });
+ed('edCat').addEventListener('change', ()=>{ const d=+ed('edDiv').value; populateSubs(d, ed('edCat').value, ''); updatePreview(); });
+ed('edSub').addEventListener('change', updatePreview);
+ed('edNote').addEventListener('input', updatePreview);
+ed('edClose').addEventListener('click', closeEditor);
+
+/* ---------- hot buttons (shared master list across devices) ---------- */
 function getHotBtns(){ try{ return JSON.parse(localStorage.getItem('ts_hotbtns')||'[]'); }catch(e){ return []; } }
-function _setHotBtnsLocal(a){ try{ localStorage.setItem('ts_hotbtns', JSON.stringify(a)); }catch(e){} }
-function setHotBtns(a){ _setHotBtnsLocal(a); if(fbUser) fsSaveHotBtns(); }
-function dedupeHot(arr){ const seen={},out=[]; (arr||[]).forEach(h=>{ const k=JSON.stringify([h.title||'',h.divIdx||0,h.cat||'',h.sub||'',h.note||'']); if(!seen[k]){ seen[k]=1; out.push(h); } }); return out; }
-function hotCatOf(h){ return h.cat||'(no category)'; }
-let hotView='cats';
-function hotStatus(m){ const e=document.getElementById('hotStatus'); if(e){ e.textContent=m||''; e.style.color=(m&&m[0]==='✓')?'#9be08a':'var(--dim)'; } }
+function setHotBtns(a){ try{ localStorage.setItem('ts_hotbtns', JSON.stringify(a)); }catch(e){} }
+function hotStatus(m){ const e=document.getElementById('hotStatus'); if(e){ e.textContent=m||''; e.style.color = (m && m[0]==='✓') ? '#9be08a' : 'var(--dim)'; } }
+function hotKey(h){ return JSON.stringify([h.title||'',h.divIdx||0,h.cat||'',h.sub||'',h.note||'']); }
+function dedupeHot(arr){ const seen={}, out=[]; (arr||[]).forEach(h=>{ const k=hotKey(h); if(!seen[k]){ seen[k]=1; out.push(h); } }); return out; }
+
+/* --- Drive sync for the shared list --- */
+const HOT_FILE='timeslice-hotbtns.json';
+let hotFileId=null;
+function hotBlob(){ let t=parseInt(localStorage.getItem('ts_hot_at')||'0',10); if(!t){ t=Date.now(); localStorage.setItem('ts_hot_at',String(t)); } return { v:1, updatedAt:t, items:getHotBtns() }; }
+async function gHotPull(){
+  if(!gtoken) return;
+  try{
+    const id=await driveFind(HOT_FILE);
+    if(id){
+      hotFileId=id;
+      const remote=await driveDownload(id);
+      const rItems=Array.isArray(remote.items)?remote.items:[];
+      if(!localStorage.getItem('ts_hot_merged')){                       // one-time: gather this device's list into the master
+        const merged=dedupeHot(rItems.concat(getHotBtns()));
+        setHotBtns(merged);
+        localStorage.setItem('ts_hot_merged','1');
+        localStorage.setItem('ts_hot_at',String(Date.now()));
+        hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob());
+      } else {
+        const localT=parseInt(localStorage.getItem('ts_hot_at')||'0',10);
+        if((remote.updatedAt||0) > localT){ setHotBtns(dedupeHot(rItems)); localStorage.setItem('ts_hot_at',String(remote.updatedAt)); }
+        else if((remote.updatedAt||0) < localT){ hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob()); }
+      }
+    } else {                                                            // no master yet: seed it from this device
+      if(!localStorage.getItem('ts_hot_at')) localStorage.setItem('ts_hot_at',String(Date.now()));
+      localStorage.setItem('ts_hot_merged','1');
+      hotFileId=await driveUpload(HOT_FILE, null, hotBlob());
+    }
+  }catch(e){ console.error('hot pull', e); }
+}
+async function gHotPush(){
+  if(!gtoken) return;
+  localStorage.setItem('ts_hot_at',String(Date.now()));
+  try{ if(hotFileId===null) hotFileId=await driveFind(HOT_FILE); hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob()); }
+  catch(e){ console.error('hot push', e); }
+}
+
+/* --- two-level UI: categories → hot buttons --- */
+let hotView='cats';    // 'cats' or a category name
+function hotCatOf(h){ return h.cat || '(no category)'; }
 function renderHot(){
-  const arr=getHotBtns(); const body=document.getElementById('hotBody');
-  const back=document.getElementById('hotBack'); const title=document.getElementById('hotTitle');
+  const arr=getHotBtns();
+  const body=document.getElementById('hotBody');
+  const back=document.getElementById('hotBack');
+  const title=document.getElementById('hotTitle');
   if(!body) return; body.innerHTML='';
   if(hotView==='cats'){
-    if(back) back.style.display='none'; if(title) title.textContent='Hot buttons';
+    back.style.display='none'; title.textContent='Hot buttons';
     const cats=[]; arr.forEach(h=>{ const c=hotCatOf(h); if(cats.indexOf(c)<0) cats.push(c); });
-    if(!cats.length){ body.innerHTML='<div class="hot-empty">No hot buttons yet. Fill the event, then save.</div>'; return; }
+    if(!cats.length){ body.innerHTML='<div class="hot-empty">No hot buttons yet. Fill the event, then “Save this event.”</div>'; return; }
     cats.forEach(c=>{
       const row=document.createElement('div'); row.className='hotrow';
       const nm=document.createElement('div'); nm.className='hotname';
@@ -1315,7 +1552,7 @@ function renderHot(){
       row.appendChild(nm); row.appendChild(ch); body.appendChild(row);
     });
   } else {
-    if(back) back.style.display='inline'; if(title) title.textContent=hotView;
+    back.style.display='inline'; title.textContent=hotView;
     const items=arr.map((h,i)=>({h,i})).filter(o=>hotCatOf(o.h)===hotView);
     if(!items.length){ hotView='cats'; renderHot(); return; }
     items.forEach(o=>{
@@ -1329,67 +1566,201 @@ function renderHot(){
   }
 }
 function applyHotBtn(hb){
-  ed('edTitle').value=hb.title||'';
-  const d=hb.divIdx||0;
-  populateDivs(d); populateCats(d,hb.cat||''); populateSubs(d,hb.cat||'',hb.sub||'');
-  ed('edNote').value=hb.note||'';
+  ed('edTitle').value = hb.title||'';
+  const d = hb.divIdx||0;
+  populateDivs(d); populateCats(d, hb.cat||''); populateSubs(d, hb.cat||'', hb.sub||'');
+  ed('edNote').value = hb.note||'';
   applyEdDivColor(d); updatePreview(); closeHot();
 }
 function saveHotBtn(){
-  const ev=edBuildEv();
-  if(!ev.title&&!ev.cat){ hotStatus('Add a title or category first.'); return; }
+  const ev = edBuildEv();
+  if(!ev.title && !ev.cat){ hotStatus('Add a title or category first.'); return; }
   const arr=dedupeHot(getHotBtns().concat([{ title:ev.title, divIdx:ev.divIdx, cat:ev.cat, sub:ev.sub, note:ev.note, label:(ev.title||ev.sub||ev.cat) }]));
-  setHotBtns(arr); renderHot(); hotStatus('✓ Saved');
+  setHotBtns(arr); gHotPush(); renderHot(); hotStatus('✓ Saved to all devices');
 }
 function deleteHotBtn(i){
   const arr=getHotBtns(); const hb=arr[i]; if(!hb) return;
-  if(!confirm('Delete "'+(hb.label||hb.title||hb.cat||'this hot button')+'" from ALL your devices?')) return;
-  arr.splice(i,1); setHotBtns(arr);
+  if(!confirm('Delete “'+(hb.label||hb.title||hb.cat||'this hot button')+'” from ALL your devices?')) return;
+  arr.splice(i,1); setHotBtns(arr); gHotPush();
   if(!arr.some(h=>hotCatOf(h)===hotView)) hotView='cats';
   renderHot();
 }
-function openHot(){ hotView='cats'; hotStatus(''); renderHot(); document.getElementById('hotPop').classList.add('open'); }
+function openHot(){ hotView='cats'; hotStatus(''); renderHot(); document.getElementById('hotPop').classList.add('open'); gHotPull().then(()=>renderHot()); }
 function closeHot(){ document.getElementById('hotPop').classList.remove('open'); }
-document.getElementById('edFlame').addEventListener('click',()=>{ const p=document.getElementById('hotPop'); p.classList.contains('open')?closeHot():openHot(); });
+document.getElementById('edFlame').addEventListener('click', ()=>{ const p=document.getElementById('hotPop'); p.classList.contains('open') ? closeHot() : openHot(); });
 document.getElementById('hotSaveBtn').addEventListener('click', saveHotBtn);
 document.getElementById('hotClose').addEventListener('click', closeHot);
-document.getElementById('hotBack').addEventListener('click',()=>{ hotView='cats'; renderHot(); });
+document.getElementById('hotBack').addEventListener('click', ()=>{ hotView='cats'; renderHot(); });
 
-/* ---------- color editor wiring ---------- */
-(function(){
-  const byId=id=>document.getElementById(id);
-  if(byId('btnColors')) byId('btnColors').addEventListener('click', ()=>{ sheet.classList.remove('open'); openColors(); });
-  if(byId('colorClose')) byId('colorClose').addEventListener('click', closeColors);
-  if(byId('colorBack')) byId('colorBack').addEventListener('click', closeColors);
-  ['cBg','cText','cD0','cD1','cD2','cD3'].forEach(id=>{ if(byId(id)) byId(id).addEventListener('input', ()=>{ applyPalette(curPalette()); save(); }); });
-  if(byId('cAlpha')) byId('cAlpha').addEventListener('input', ()=>{ byId('cAlphaVal').textContent=byId('cAlpha').value+'%'; applyPalette(curPalette()); save(); });
-  if(byId('palSaveBtn')) byId('palSaveBtn').addEventListener('click', ()=>{
-    const nameEl=byId('palName'); const name=(nameEl.value||'').trim();
-    if(!name){ nameEl.focus(); return; }
-    const arr=getPalettes(); const p=curPalette(); p.name=name;
-    const ex=arr.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
-    if(ex>=0) arr[ex]=p; else arr.push(p);
-    setPalettes(arr); nameEl.value=''; renderPalettes();
+/* ---------- login popup (centered, shown when not connected) ---------- */
+function updateLoginPop(){ const el=document.getElementById('loginPop'); if(el) el.style.display = gtoken ? 'none' : 'block'; }
+document.getElementById('loginPopBtn').addEventListener('click', gConnect);
+ed('editorBack').addEventListener('click', closeEditor);
+ed('edSave').addEventListener('click', ()=>{
+  const segs = daySegs();
+  if(edSegIdx<0 || edSegIdx>=segs.length) return closeEditor();
+  segs[edSegIdx].ev = edBuildEv();
+  save(); closeEditor();
+});
+ed('edExport').addEventListener('click', ()=>{
+  const segs = daySegs();
+  if(edSegIdx<0 || edSegIdx>=segs.length) return;
+  segs[edSegIdx].ev = edBuildEv();           // commit current edits first
+  save();
+  ed('edDelete').style.visibility='visible';
+  const seg = segs[edSegIdx];
+  if(!seg.ev.cat && !seg.ev.title){ edStatus('Add a title or category before exporting.','err'); return; }
+  if(!gtoken){ edStatus('Redirecting to Google…'); gBeginAuth({type:'seg', date:dayKey(state.date), start:seg.start}); return; }
+  doSegExport(seg);
+});
+function doSegExport(seg){
+  const b=ed('edExport'); b.disabled=true; edStatus('Exporting…');
+  exportSeg(seg).then(res=>{
+    if(res.needAuth){ gBeginAuth({type:'seg', date:dayKey(state.date), start:seg.start}); return; }
+    edStatus(res.ok ? '✓ Exported to Google Calendar.' : res.msg, res.ok?'ok':'err');
+  }).catch(e=>edStatus(e.message,'err')).finally(()=>{ b.disabled=false; });
+}
+ed('edDelete').addEventListener('click', ()=>{ const segs=daySegs(); if(edSegIdx>=0 && edSegIdx<segs.length) segs[edSegIdx].ev=null; save(); closeEditor(); });
+
+/* ---------- colors + palettes ---------- */
+function getPalettes(){ try{ return JSON.parse(localStorage.getItem('ts_palettes')||'[]'); }catch(e){ return []; } }
+function setPalettes(a){ try{ localStorage.setItem('ts_palettes', JSON.stringify(a)); }catch(e){} }
+function curPalette(){
+  const t = +document.getElementById('cAlpha').value;   // % transparent
+  return {
+    bg:   document.getElementById('cBg').value,
+    text: document.getElementById('cText').value,
+    divs:[0,1,2,3].map(i=>document.getElementById('cD'+i).value),
+    alpha: 1 - t/100
+  };
+}
+function fillColorInputs(p){
+  document.getElementById('cBg').value   = p.bg;
+  document.getElementById('cText').value = p.text;
+  [0,1,2,3].forEach(i=>{ document.getElementById('cD'+i).value = p.divs[i] || DEFAULT_PALETTE.divs[i]; });
+  const t = Math.round((1-(p.alpha!=null?p.alpha:1))*100);
+  document.getElementById('cAlpha').value = t;
+  document.getElementById('cAlphaVal').textContent = t+'%';
+  // label the four division swatches with their current names
+  const labs = document.querySelectorAll('#cgrid label');
+  CONFIG.divisions.forEach((d,i)=>{ const lab=labs[2+i]; if(lab){ lab.childNodes[0].nodeValue=d.name; } });
+}
+function renderPalettes(){
+  const list=document.getElementById('palList'); const arr=getPalettes(); list.innerHTML='';
+  if(!arr.length){ list.innerHTML='<div class="palempty">No saved palettes yet.</div>'; return; }
+  arr.forEach((p,i)=>{
+    const row=document.createElement('div'); row.className='palrow';
+    const sw=document.createElement('div'); sw.className='sw';
+    [p.bg,p.text,...p.divs].forEach(c=>{ const b=document.createElement('i'); b.style.background=c; sw.appendChild(b); });
+    const nm=document.createElement('div'); nm.className='pn'; nm.textContent=p.name;
+    nm.addEventListener('click', ()=>{ applyPalette({bg:p.bg,text:p.text,divs:p.divs.slice()}); fillColorInputs(state.palette); save(); });
+    const x=document.createElement('div'); x.className='px'; x.textContent='\u00d7';
+    x.addEventListener('click', ()=>{ const a=getPalettes(); a.splice(i,1); setPalettes(a); renderPalettes(); });
+    row.appendChild(sw); row.appendChild(nm); row.appendChild(x); list.appendChild(row);
   });
-})();
+}
+function openColors(){
+  fillColorInputs(state.palette || DEFAULT_PALETTE);
+  renderPalettes();
+  document.getElementById('colorBack').classList.add('open');
+  document.getElementById('colorPanel').classList.add('open');
+}
+function closeColors(){
+  document.getElementById('colorBack').classList.remove('open');
+  document.getElementById('colorPanel').classList.remove('open');
+}
+['cBg','cText','cD0','cD1','cD2','cD3'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{ applyPalette(curPalette()); save(); });
+});
+document.getElementById('cAlpha').addEventListener('input', ()=>{
+  document.getElementById('cAlphaVal').textContent = document.getElementById('cAlpha').value+'%';
+  applyPalette(curPalette()); save();
+});
+document.getElementById('btnColors').addEventListener('click', ()=>{ sheet.classList.remove('open'); openColors(); });
+document.getElementById('colorClose').addEventListener('click', closeColors);
+document.getElementById('colorBack').addEventListener('click', closeColors);
+document.getElementById('palSaveBtn').addEventListener('click', ()=>{
+  const nameEl=document.getElementById('palName'); const name=(nameEl.value||'').trim();
+  if(!name) { nameEl.focus(); return; }
+  const arr=getPalettes(); const p=curPalette(); p.name=name;
+  const existing=arr.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
+  if(existing>=0) arr[existing]=p; else arr.push(p);
+  setPalettes(arr); nameEl.value=''; renderPalettes();
+});
+
+/* ---------- category sync (import from TimeTrap) ---------- */
+function normPfx(p){ return String(p||'').trim().toLowerCase(); }
+function getTrees(){ try{ return JSON.parse(localStorage.getItem('ts_trees')||'null'); }catch(e){ return null; } }
+function setTrees(arr){ try{ localStorage.setItem('ts_trees', JSON.stringify(arr)); }catch(e){} }
+function applyTrees(arr){
+  if(!Array.isArray(arr)) return 0;
+  let n=0;
+  arr.forEach(d=>{
+    if(!d || !Array.isArray(d.tree)) return;
+    let idx=CONFIG.divisions.findIndex(x=>normPfx(x.prefix)===normPfx(d.prefix));
+    if(idx<0) idx=CONFIG.divisions.findIndex(x=>(x.name||'').toLowerCase()===(d.name||'').toLowerCase());
+    if(idx<0) return;
+    CONFIG.divisions[idx].tree = d.tree
+      .map(c=>({cat:String(c.cat||c.category||''), subs:Array.isArray(c.subs)?c.subs.map(String):[]}))
+      .filter(c=>c.cat);
+    if(d.name) CONFIG.divisions[idx].name = d.name;
+    if(d.calName) CONFIG.divisions[idx].calName = d.calName;
+    if(d.calId) CONFIG.divisions[idx].calId = d.calId;
+    n++;
+  });
+  return n;
+}
+function openCats(){ const st=document.getElementById('catStatus'); if(st) st.textContent=''; document.getElementById('catBack').classList.add('open'); document.getElementById('catPanel').classList.add('open'); }
+function closeCats(){ document.getElementById('catBack').classList.remove('open'); document.getElementById('catPanel').classList.remove('open'); }
+document.getElementById('btnCats').addEventListener('click', ()=>{ sheet.classList.remove('open'); openCats(); });
+document.getElementById('catClose').addEventListener('click', closeCats);
+document.getElementById('catBack').addEventListener('click', closeCats);
+document.getElementById('catImportBtn').addEventListener('click', ()=>{
+  const raw=(document.getElementById('catPaste').value||'').trim();
+  const st=document.getElementById('catStatus');
+  const fail=m=>{ st.textContent=m; st.style.color='#ff8a6b'; };
+  if(!raw) return fail('Paste the blob first.');
+  let data; try{ data=JSON.parse(raw); }catch(e){ return fail('That isn’t valid TimeTrap data.'); }
+  const arr = Array.isArray(data) ? data : (data && Array.isArray(data.divisions) ? data.divisions : null);
+  if(!arr) return fail('No divisions found in that blob.');
+  const n=applyTrees(arr);
+  if(n>0){ setTrees(arr); st.textContent='✓ Updated '+n+' division'+(n!==1?'s':'')+'. Reopen an event to see them.'; st.style.color='#9be08a'; }
+  else fail('Couldn’t match any divisions (check prefixes).');
+});
 
 /* ---------- boot ---------- */
-try{
-  load();
-  (function(){ const t=getTrees(); if(t) applyTrees(t); })();
-  applyPalette(state.palette || DEFAULT_PALETTE);
-  applyMinimal();
-  const tsJustAuthed = gHandleRedirect();
-  gRestore(); gCalUI();
-  (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this URL as an Authorized redirect URI in Google Cloud: '+gRedirectUri(); })();
-  if(tsJustAuthed){ gStatus('Calendar connected.','ok'); gResumePending(); }
-  document.body.style.background = COLORS.bg;
-}catch(e){ console.error('boot error',e); if(window.onerror) window.onerror('boot: '+e.message,'',0,0,e); }
-// Layout after DOM has painted — multiple passes handle slow Firebase init
-safeLayout();
-setTimeout(safeLayout, 500);
-setTimeout(safeLayout, 1500);
-(function loop(){ try{ draw(); }catch(e){} requestAnimationFrame(loop); })();
+load();
+(function(){ const t=getTrees(); if(t) applyTrees(t); })();   // categories pulled from TimeTrap
+applyPalette(state.palette || DEFAULT_PALETTE);   // restore saved colors (relative shades derive from bg+text)
+applyMinimal();          // sets zoom visibility + date label, then lays out
+const tsJustAuthed = gHandleRedirect();   // catch #access_token returning from Google
+gRestore();              // restore Google auth state if still valid
+(function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
+document.getElementById('btnSyncSend').addEventListener('click', gForcePush);
+document.getElementById('btnSyncGet').addEventListener('click', gForcePull);
+if(tsJustAuthed){ gAuthedUI(); gStatus('Calendar connected.','ok'); gResumePending();
+  // Also sign into Firebase using the same Google token — one redirect, both auth paths
+  const _fbCred=firebase.auth.GoogleAuthProvider.credential(null,gtoken);
+  fbAuth.signInWithCredential(_fbCred).catch(e=>console.error('fb cred',e));
+}
+updateLoginPop();
+if(gtoken){ gSlicesPull(); gHotPull(); gCatsPull(); }    // slices + hot buttons + categories auto-sync; palettes via Receive
+setInterval(gAutoPull, 20000);                                           // keep slices fresh every 20s while open
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ gAutoPull(); gCatsPull(); } });
+window.addEventListener('focus', ()=>{ gAutoPull(); gCatsPull(); });
+let lastPullAt=0;
+function maybePullSlices(){
+  if(!gtoken) return;
+  const now=Date.now();
+  if(now-lastPullAt < 4000) return;   // throttle bursts
+  lastPullAt=now; gSlicesPull();
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') maybePullSlices(); });
+window.addEventListener('focus', maybePullSlices);
+setInterval(()=>{ if(document.visibilityState==='visible') maybePullSlices(); }, 30000);   // refresh every 30s while open
+document.body.style.background = COLORS.bg;
+setTimeout(layout, 300);
+(function loop(){ draw(); requestAnimationFrame(loop); })();
 </script>
 </body>
 </html>
