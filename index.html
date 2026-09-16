@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.52</span></h2>
+    <h2>TimeSlice<span class="ver">v1.53</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1771,21 +1771,17 @@ gRestore();              // restore Google auth state if still valid
 
 
 if(tsJustAuthed){
-  dbgLog('redirect: got token, gtoken set');
   gAuthedUI();
   const _fbCred=firebase.auth.GoogleAuthProvider.credential(null,gtoken);
   fbAuth.signInWithCredential(_fbCred)
-    .then(r=>{ 
-      dbgLog('fb cred OK: '+(r.user?r.user.email:'?'));
+    .then(r=>{
       const el=document.getElementById('fbAuthStatus'); if(el&&r.user) el.textContent=r.user.email+' · Calendar connected';
     })
     .catch(e=>{
-      dbgLog('fb cred ERR: '+e.code+' '+e.message.slice(0,60));
       const el=document.getElementById('fbAuthStatus'); if(el) el.textContent='Calendar connected (Firebase: '+e.code+')';
     });
   gResumePending();
 } else {
-  dbgLog('redirect: no token (hash='+location.hash.slice(0,30)+')');
 }
 
 // Drive sync disabled — Firebase handles sync
@@ -1804,7 +1800,7 @@ function maybePullSlices(){
 
 document.body.style.background = COLORS.bg;
 
-requestAnimationFrame(()=>{ layout(); requestAnimationFrame(()=>{ layout(); dbgLog('post-layout: barTop='+barTop+' barBot='+barBot); }); });
+requestAnimationFrame(()=>{ layout(); requestAnimationFrame(()=>{ layout(); }); });
 setTimeout(layout, 400);
 setTimeout(layout, 1200);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
