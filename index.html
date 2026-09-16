@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.62</span></h2>
+    <h2>TimeSlice<span class="ver">v1.63</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -225,6 +225,10 @@ body{
     <div class="row" id="colorsRow">
       <div>Colors &amp; palettes<div class="sub">Background, text &amp; calendar colors</div></div>
       <button class="ghostbtn" id="btnColors">Edit</button>
+    </div>
+    <div class="row" id="catsRow">
+      <div>Categories<div class="sub">Import from TimeTrap</div></div>
+      <button class="ghostbtn" id="btnCats">Import</button>
     </div>
 
   </div>
@@ -1751,6 +1755,7 @@ function closeCats(){ document.getElementById('catBack').classList.remove('open'
 
 document.getElementById('catClose').addEventListener('click', closeCats);
 document.getElementById('catBack').addEventListener('click', closeCats);
+document.getElementById('btnCats').addEventListener('click', ()=>{ sheet.classList.remove('open'); openCats(); });
 document.getElementById('catImportBtn').addEventListener('click', ()=>{
   const raw=(document.getElementById('catPaste').value||'').trim();
   const st=document.getElementById('catStatus');
@@ -1760,7 +1765,7 @@ document.getElementById('catImportBtn').addEventListener('click', ()=>{
   const arr = Array.isArray(data) ? data : (data && Array.isArray(data.divisions) ? data.divisions : null);
   if(!arr) return fail('No divisions found in that blob.');
   const n=applyTrees(arr);
-  if(n>0){ setTrees(arr); st.textContent='✓ Updated '+n+' division'+(n!==1?'s':'')+'. Reopen an event to see them.'; st.style.color='#9be08a'; }
+  if(n>0){ setTrees(arr); if(typeof fsSaveConfig==='function'&&fbUser) fsSaveConfig(); st.textContent='✓ Updated '+n+' division'+(n!==1?'s':'')+'. Reopen an event to see them.'; st.style.color='#9be08a'; }
   else fail('Couldn’t match any divisions (check prefixes).');
 });
 
