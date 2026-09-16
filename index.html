@@ -180,7 +180,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.41</span></h2>
+    <h2>TimeSlice<span class="ver">v1.42</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -440,6 +440,12 @@ function load(){
 /* ---------- geometry ---------- */
 let W=0,H=0,dpr=1,originX=0,originY=0;
 let barTop=0, barBot=0, barX=0, barW=20;
+function safeLayout(){
+  requestAnimationFrame(()=>{
+    layout();
+    requestAnimationFrame(layout);
+  });
+}
 function layout(){
   dpr = window.devicePixelRatio || 1;
   const st = document.getElementById('stage');
@@ -1056,7 +1062,10 @@ async function fsLoadAll(){
       if(doc.exists && Array.isArray(doc.data().segs)) state.segsByDay[k]=doc.data().segs;
     }
   }catch(e){ console.error('fsLoadAll',e); }
-  layout();   // re-run after async load so bar + now-line render with correct dimensions
+  // Re-apply palette + layout now that Firestore data is in
+  applyPalette(state.palette || DEFAULT_PALETTE);
+  document.body.style.background = COLORS.bg;
+  safeLayout();
 }
 
 /* ── Real-time listener on today's slices ── */
@@ -1295,7 +1304,10 @@ gRestore(); gCalUI();
 (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this URL as an Authorized redirect URI in Google Cloud: '+gRedirectUri(); })();
 if(tsJustAuthed){ gStatus('Calendar connected.','ok'); gResumePending(); }
 document.body.style.background = COLORS.bg;
-setTimeout(layout, 300);
+// Layout after DOM has painted — multiple passes handle slow Firebase init
+safeLayout();
+setTimeout(safeLayout, 500);
+setTimeout(safeLayout, 1500);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
 </script>
 </body>
