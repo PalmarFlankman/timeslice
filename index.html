@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.55</span></h2>
+    <h2>TimeSlice<span class="ver">v1.56</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1094,7 +1094,15 @@ const fbAuth=firebase.auth();
 const fbDb=firebase.firestore();
 let fbUser=null, fbApplyingRemote=false;
 
-function fsPath(sub){ return fbDb.doc('timeslice/users/'+fbUser.uid+'/'+sub); }
+/* ── Shared user ID: derived from Client ID so all devices share Firestore data ── */
+function tsUserId(){
+  const cid=localStorage.getItem('ts_cid')||'';
+  // Use the numeric project number from the Client ID (before the dash) as the stable key
+  const m=cid.match(/^([0-9]+)-/);
+  return m ? 'cid_'+m[1] : (fbUser ? tsUserId() : 'anon');
+}
+
+function fsPath(sub){ return fbDb.doc('timeslice/users/'+tsUserId()+'/'+sub); }
 
 let fsSliceTimer=null;
 function fsSaveSlices(){
@@ -1108,17 +1116,17 @@ function scheduleSliceSave(){ clearTimeout(fsSliceTimer); fsSliceTimer=setTimeou
 function fsSaveConfig(){
   if(!fbUser) return;
   const ts=Date.now(); state._configTs=ts;
-  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').set({palette:state.palette||DEFAULT_PALETTE,palettes:getPalettes(),trees:getTrees()||null,ts}).catch(e=>console.error('fs cfg',e));
+  fbDb.doc('timeslice/users/'+tsUserId()+'/config/main').set({palette:state.palette||DEFAULT_PALETTE,palettes:getPalettes(),trees:getTrees()||null,ts}).catch(e=>console.error('fs cfg',e));
 }
 function fsSaveHotBtns(){
   if(!fbUser) return;
-  fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').set({items:getHotBtns(),ts:Date.now()}).catch(e=>console.error('fs hot',e));
+  fbDb.doc('timeslice/users/'+tsUserId()+'/config/hotbtns').set({items:getHotBtns(),ts:Date.now()}).catch(e=>console.error('fs hot',e));
 }
 
 async function fsLoadAll(){
   if(!fbUser) return;
   try{
-    const cfg=await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').get();
+    const cfg=await fbDb.doc('timeslice/users/'+tsUserId()+'/config/main').get();
     if(cfg.exists){
       const d=cfg.data(); state._configTs=d.ts||0;
       if(Array.isArray(d.palettes)) setPalettes(d.palettes);
@@ -1128,7 +1136,7 @@ async function fsLoadAll(){
       // Nothing in Firestore yet — seed it from local state
       fsSaveConfig();
     }
-    const hb=await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').get();
+    const hb=await fbDb.doc('timeslice/users/'+tsUserId()+'/config/hotbtns').get();
     if(hb.exists&&Array.isArray(hb.data().items)) setHotBtns(dedupeHot(hb.data().items));
     const today=dayKey(state.date); const yd=new Date(state.date); yd.setDate(yd.getDate()-1);
     for(const k of [today,dayKey(yd)]){
@@ -1162,7 +1170,7 @@ function fsListenSlices(){
 function fsListenConfig(){
   if(fsConfigUnsub){ fsConfigUnsub(); fsConfigUnsub=null; }
   if(!fbUser) return;
-  fsConfigUnsub=fbDb.doc('timeslice/users/'+fbUser.uid+'/config/main').onSnapshot(snap=>{
+  fsConfigUnsub=fbDb.doc('timeslice/users/'+tsUserId()+'/config/main').onSnapshot(snap=>{
     if(!snap.exists) return;
     const d=snap.data();
     // Only apply if newer than current state (cross-device update)
@@ -1177,7 +1185,7 @@ function fsListenConfig(){
 function fbAuthUI(){
   const el=document.getElementById('fbAuthStatus');
   if(fbUser){
-    const uid=fbUser.uid.slice(0,8);
+    const uid=tsUserId().slice(0,8);
     if(el) el.textContent='Syncing · id:'+uid+(gtoken?' · Calendar ✓':'');
   } else {
     if(el) el.textContent='Connecting…';
