@@ -180,7 +180,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.40</span></h2>
+    <h2>TimeSlice<span class="ver">v1.41</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1047,7 +1047,7 @@ async function fsLoadAll(){
     // hot buttons
     const hb = await fbDb.doc('timeslice/users/'+fbUser.uid+'/config/hotbtns').get();
     if(hb.exists && Array.isArray(hb.data().items)) setHotBtns(dedupeHot(hb.data().items));
-    // slices for today + yesterday (most likely needed)
+    // slices for today + yesterday
     const today=dayKey(state.date);
     const yd=new Date(state.date); yd.setDate(yd.getDate()-1);
     const yesterday=dayKey(yd);
@@ -1056,6 +1056,7 @@ async function fsLoadAll(){
       if(doc.exists && Array.isArray(doc.data().segs)) state.segsByDay[k]=doc.data().segs;
     }
   }catch(e){ console.error('fsLoadAll',e); }
+  layout();   // re-run after async load so bar + now-line render with correct dimensions
 }
 
 /* ── Real-time listener on today's slices ── */
@@ -1104,8 +1105,9 @@ document.getElementById('btnFbSignIn').addEventListener('click', ()=>{ if(fbUser
 
 fbAuth.onAuthStateChanged(async user=>{
   fbUser=user;
-  fbAuthReady=true;    // Firebase has now confirmed session state
+  fbAuthReady=true;
   fbAuthUI();
+  layout();   // ensure bar renders whether signed in or not
   if(user){
     await fsLoadAll();
     fsListenSlices();
