@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.57</span></h2>
+    <h2>TimeSlice<span class="ver">v1.58</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -209,7 +209,7 @@ body{
     </div>
     <div class="row" id="cidRow">
       <div style="width:100%">
-        <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false">
+        <input id="gcid" type="text" placeholder="Client ID (…apps.googleusercontent.com)" autocomplete="off" spellcheck="false" value="56911817267-uediebleri300q2cg7jklvkprur207nr.apps.googleusercontent.com">
         <div class="sub" id="redirHint" style="margin-top:7px;word-break:break-all;line-height:1.5;"></div>
       </div>
     </div>
@@ -1096,10 +1096,14 @@ let fbUser=null, fbApplyingRemote=false;
 
 /* ── Shared user ID: derived from Client ID so all devices share Firestore data ── */
 function tsUserId(){
+  // Prefer key derived from Client ID (shared across all devices with same CID)
   const cid=localStorage.getItem('ts_cid')||'';
-  // Use the numeric project number from the Client ID (before the dash) as the stable key
   const m=cid.match(/^([0-9]+)-/);
-  return m ? 'cid_'+m[1] : (fbUser ? tsUserId() : 'anon');
+  if(m) return 'cid_'+m[1];
+  // No CID yet — use/generate a persistent device key
+  let k=localStorage.getItem('ts_uid');
+  if(!k){ k='dev_'+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('ts_uid',k); }
+  return k;
 }
 
 function fsPath(sub){ return fbDb.doc('timeslice/users/'+tsUserId()+'/'+sub); }
@@ -1182,8 +1186,9 @@ function fsListenConfig(){
 function fbAuthUI(){
   const el=document.getElementById('fbAuthStatus');
   if(fbUser){
-    const uid=tsUserId().slice(0,8);
-    if(el) el.textContent='Syncing · id:'+uid+(gtoken?' · Calendar ✓':'');
+    const uid=tsUserId();
+    const kind=uid.startsWith('cid_')?'shared':'device';
+    if(el) el.textContent='Syncing · '+kind+':'+uid.slice(0,12)+(gtoken?' · Cal ✓':'');
   } else {
     if(el) el.textContent='Connecting…';
   }
@@ -1193,14 +1198,16 @@ function fbAuthUI(){
 
 fbAuth.onAuthStateChanged(async user=>{
   if(user){
-    fbUser=user; fbAuthUI();
-    await fsLoadAll(); fsListenSlices();
+    fbUser=user;
+    fbAuthUI();
+    await fsLoadAll();
+    fsListenSlices();
   } else {
-    // Sign in anonymously — persistent across sessions, no Google credential needed
-    fbAuth.signInAnonymously().catch(e=>{ 
-      const el=document.getElementById('fbAuthStatus'); 
-      if(el) el.textContent='Sync unavailable: '+e.code; 
-      console.error('anon auth',e); 
+    const el=document.getElementById('fbAuthStatus');
+    if(el) el.textContent='Connecting…';
+    fbAuth.signInAnonymously().catch(e=>{
+      console.error('anon auth failed',e);
+      if(el) el.textContent='Sync offline ('+e.code+')';
     });
   }
 });
