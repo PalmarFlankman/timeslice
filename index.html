@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.61</span></h2>
+    <h2>TimeSlice<span class="ver">v1.62</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -761,6 +761,7 @@ function applyPalette(p){
   root.setProperty('--text', p.text);
   root.setProperty('--dim', COLORS.label);
   document.body.style.background = p.bg;
+  document.documentElement.style.background = p.bg;
   const meta = document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute('content', p.bg);
   state.palette = { bg:p.bg, text:p.text, divs:p.divs.slice(), alpha:(p.alpha!=null?p.alpha:1) };
   if(typeof fbUser!=='undefined'&&fbUser&&typeof fsSaveConfig==='function') fsSaveConfig();
@@ -1141,7 +1142,7 @@ async function fsLoadAll(){
     if(cfg.exists){
       const d=cfg.data(); state._configTs=d.ts||0;
       if(Array.isArray(d.palettes)) setPalettes(d.palettes);
-      if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; }
+      if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; document.documentElement.style.background=COLORS.bg; }
       if(Array.isArray(d.trees)&&d.trees.length){ setTrees(d.trees); applyTrees(d.trees); }
     } else {
       // Nothing in Firestore yet — seed it from local state
@@ -1186,7 +1187,7 @@ function fsListenConfig(){
     if(!d.ts || d.ts <= (state._configTs||0)) return;
     state._configTs=d.ts;
     if(Array.isArray(d.palettes)) { try{ localStorage.setItem('ts_palettes',JSON.stringify(d.palettes)); }catch(e){} }
-    if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; }
+    if(d.palette&&d.palette.bg){ applyPalette(d.palette); document.body.style.background=COLORS.bg; document.documentElement.style.background=COLORS.bg; }
     if(Array.isArray(d.trees)&&d.trees.length){ setTrees(d.trees); applyTrees(d.trees); }
   },e=>console.error('fs cfg listen',e));
 }
@@ -1790,7 +1791,7 @@ function maybePullSlices(){
 
 
 
-document.body.style.background = COLORS.bg;
+document.body.style.background = COLORS.bg; document.documentElement.style.background = COLORS.bg;
 
 requestAnimationFrame(()=>{ layout(); requestAnimationFrame(()=>{ layout(); }); });
 setTimeout(layout, 400);
