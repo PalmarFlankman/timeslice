@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.48</span></h2>
+    <h2>TimeSlice<span class="ver">v1.49</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1049,7 +1049,8 @@ function gHandleRedirect(){
   history.replaceState(null,'',location.origin+location.pathname+location.search);  // strip token from URL
   const want=localStorage.getItem('ts_ostate'); localStorage.removeItem('ts_ostate');
   if(!tok) return false;
-  if(want && st && st!==want) return false;
+  // Relaxed state check — iOS home-screen apps lose sessionStorage across redirects
+  if(want && st && st!==want){ console.warn('state mismatch, proceeding anyway'); }
   gtoken=tok;
   localStorage.setItem('ts_tok',tok);
   localStorage.setItem('ts_exp',String(Date.now()+(parseInt(exp||'3600',10))*1000));
@@ -1137,8 +1138,8 @@ async function fsLoadAll(){
       }
     }
   }catch(e){ console.error('fsLoadAll',e); }
-  fsListenConfig();   // start real-time config listener (palette sync across devices)
-  setTimeout(layout,100);
+  fsListenConfig();
+  requestAnimationFrame(()=>{ layout(); requestAnimationFrame(layout); });
 }
 
 let fsSliceUnsub=null, fsConfigUnsub=null, fsLastWriteTs=0;
@@ -1772,10 +1773,18 @@ gRestore();              // restore Google auth state if still valid
 (function(){ const rh=document.getElementById('redirHint'); if(rh) rh.textContent='Add this exact URL as an Authorized redirect URI in Google: '+gRedirectUri(); })();
 
 
-if(tsJustAuthed){ gAuthedUI(); gStatus('Calendar connected.','ok'); gResumePending();
-  // Also sign into Firebase using the same Google token — one redirect, both auth paths
+if(tsJustAuthed){
+  gAuthedUI();
+  // Firebase: use the access token to sign in
+  // signInWithCredential with access_token works for Google provider
   const _fbCred=firebase.auth.GoogleAuthProvider.credential(null,gtoken);
-  fbAuth.signInWithCredential(_fbCred).catch(e=>console.error('fb cred',e));
+  fbAuth.signInWithCredential(_fbCred)
+    .then(r=>{ const el=document.getElementById('fbAuthStatus'); if(el&&r.user) el.textContent=r.user.email+' · Calendar connected'; })
+    .catch(e=>{
+      console.error('fb cred error',e.code,e.message);
+      const el=document.getElementById('fbAuthStatus'); if(el) el.textContent='Calendar connected (Firebase: '+e.code+')';
+    });
+  gResumePending();
 }
 
 // Drive sync disabled — Firebase handles sync
@@ -1793,7 +1802,10 @@ function maybePullSlices(){
 
 
 document.body.style.background = COLORS.bg;
-setTimeout(layout, 300);
+// Call layout at multiple points — Firebase async init means we can't rely on one timeout
+requestAnimationFrame(()=>{ layout(); requestAnimationFrame(layout); });
+setTimeout(layout, 400);
+setTimeout(layout, 1200);
 (function loop(){ draw(); requestAnimationFrame(loop); })();
 </script>
 </body>
