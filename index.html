@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.53</span></h2>
+    <h2>TimeSlice<span class="ver">v1.54</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1047,7 +1047,7 @@ function gConnect(){ gBeginAuth(null); }
 function gHandleRedirect(){
   if(!location.hash || location.hash.indexOf('access_token')<0) return false;
   const h=new URLSearchParams(location.hash.replace(/^#/,''));
-  const tok=h.get('access_token'), exp=h.get('expires_in'), st=h.get('state');
+  const tok=h.get('access_token'), idTok=h.get('id_token'), exp=h.get('expires_in'), st=h.get('state');
   history.replaceState(null,'',location.origin+location.pathname+location.search);  // strip token from URL
   const want=localStorage.getItem('ts_ostate'); localStorage.removeItem('ts_ostate');
   if(!tok) return false;
@@ -1057,6 +1057,7 @@ function gHandleRedirect(){
   localStorage.setItem('ts_tok',tok);
   localStorage.setItem('ts_exp',String(Date.now()+(parseInt(exp||'3600',10))*1000));
   localStorage.setItem('ts_scope',GSCOPE); localStorage.setItem('ts_granted','1');
+  if(idTok) localStorage.setItem('ts_idtok',idTok);
   return true;
 }
 function gResumePending(){
@@ -1198,8 +1199,11 @@ function fbSignIn(){
     return;
   }
   const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const nonce=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
   localStorage.setItem('ts_ostate',st);
-  const p=new URLSearchParams({client_id:cid,redirect_uri:gRedirectUri(),response_type:'token',scope:GSCOPE,include_granted_scopes:'true',state:st,prompt:'select_account'});
+  localStorage.setItem('ts_nonce',nonce);
+  // id_token + token: Firebase needs the id_token; Calendar needs the access_token
+  const p=new URLSearchParams({client_id:cid,redirect_uri:gRedirectUri(),response_type:'id_token token',scope:GSCOPE,include_granted_scopes:'true',state:st,nonce:nonce,prompt:'select_account'});
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+p.toString();
 }
 document.getElementById('btnFbSignIn').addEventListener('click',()=>{ if(fbUser) fbAuth.signOut(); else fbSignIn(); });
@@ -1772,10 +1776,11 @@ gRestore();              // restore Google auth state if still valid
 
 if(tsJustAuthed){
   gAuthedUI();
-  const _fbCred=firebase.auth.GoogleAuthProvider.credential(null,gtoken);
+  const _idTok=localStorage.getItem('ts_idtok');
+  const _fbCred=_idTok ? firebase.auth.GoogleAuthProvider.credential(_idTok,gtoken) : firebase.auth.GoogleAuthProvider.credential(null,gtoken);
   fbAuth.signInWithCredential(_fbCred)
     .then(r=>{
-      const el=document.getElementById('fbAuthStatus'); if(el&&r.user) el.textContent=r.user.email+' · Calendar connected';
+      const el=document.getElementById('fbAuthStatus'); if(el&&r.user) el.textContent=r.user.email+' · ✓';
     })
     .catch(e=>{
       const el=document.getElementById('fbAuthStatus'); if(el) el.textContent='Calendar connected (Firebase: '+e.code+')';
