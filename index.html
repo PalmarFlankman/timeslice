@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.58</span></h2>
+    <h2>TimeSlice<span class="ver">v1.59</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -303,9 +303,16 @@ body{
 /* debug removed */
 
 /* ============================================================
-   TimeSlice v0.1 — core time bar
-   The day is measured in minutes from midnight: 0 .. 1440.
+   TimeSlice — core time bar
    ============================================================ */
+
+// Save Client ID from the baked-in input value immediately — before Firebase init
+(function(){
+  const el=document.getElementById('gcid');
+  if(el && el.value && !localStorage.getItem('ts_cid')){
+    localStorage.setItem('ts_cid', el.value.trim());
+  }
+})();
 
 const cv = document.getElementById('bar');
 const ctx = cv.getContext('2d');
