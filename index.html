@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.56</span></h2>
+    <h2>TimeSlice<span class="ver">v1.57</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1108,7 +1108,6 @@ let fsSliceTimer=null;
 function fsSaveSlices(){
   if(!fbUser) return;
   const key=dayKey(state.date);
-  const ts=Date.now(); fsLastWriteTs=ts;
   fsPath('slices/'+key).set({segs:state.segsByDay[key]||[],ts}).catch(e=>console.error('fs slice',e));
 }
 function scheduleSliceSave(){ clearTimeout(fsSliceTimer); fsSliceTimer=setTimeout(fsSaveSlices,1500); }
@@ -1142,9 +1141,7 @@ async function fsLoadAll(){
     for(const k of [today,dayKey(yd)]){
       const doc=await fsPath('slices/'+k).get();
       if(doc.exists&&Array.isArray(doc.data().segs)){
-        // Only overwrite local if Firestore is newer
-        const localTs=parseInt(localStorage.getItem('ts_slices_at_'+k)||'0',10);
-        if((doc.data().ts||0)>localTs) state.segsByDay[k]=doc.data().segs;
+        state.segsByDay[k]=doc.data().segs;
       }
     }
   }catch(e){ console.error('fsLoadAll',e); }
@@ -1152,7 +1149,7 @@ async function fsLoadAll(){
   requestAnimationFrame(()=>{ layout(); requestAnimationFrame(layout); });
 }
 
-let fsSliceUnsub=null, fsConfigUnsub=null, fsLastWriteTs=0;
+let fsSliceUnsub=null, fsConfigUnsub=null;
 function fsListenSlices(){
   if(fsSliceUnsub){ fsSliceUnsub(); fsSliceUnsub=null; }
   if(!fbUser) return;
@@ -1161,7 +1158,7 @@ function fsListenSlices(){
     if(!snap.exists) return;
     const d=snap.data();
     // Only apply if Firestore timestamp is newer than our last local write
-    if(Array.isArray(d.segs) && (d.ts||0) > fsLastWriteTs){
+    if(Array.isArray(d.segs)){
       fbApplyingRemote=true;
       try{ state.segsByDay[key]=d.segs; }finally{ fbApplyingRemote=false; }
     }
@@ -1212,8 +1209,6 @@ fbAuth.onAuthStateChanged(async user=>{
 function save(){
   _baseSave();
   if(typeof fbUser!=='undefined' && fbUser && !fbApplyingRemote){
-    const k=dayKey(state.date);
-    const ts=Date.now(); try{ localStorage.setItem('ts_slices_at_'+k,String(ts)); }catch(e){}
     scheduleSliceSave();
   }
 }
