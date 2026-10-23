@@ -191,7 +191,7 @@ body{
 
   <div id="sheet">
     <span id="sheetClose">&times;</span>
-    <h2>TimeSlice<span class="ver">v1.64</span></h2>
+    <h2>TimeSlice<span class="ver">v1.65</span></h2>
     <div class="row">
       <div>Minimal mode<div class="sub">Hide ticks, time labels &amp; event labels</div></div>
       <div class="toggle" id="tglMinimal"><b></b></div>
@@ -1000,6 +1000,7 @@ function setDate(d){
   state.detached = false; state.sliceTime = null;
   updateDateLabel();
   save();
+  try{ if(fbUser) fsListenSlices(); }catch(e){}   // follow the day being viewed
 }
 function updateDateLabel(){ document.getElementById('dateLabel').textContent = fmtDate(state.date); }
 function applyMinimal(){
@@ -1122,21 +1123,64 @@ function tsUserId(){
 function fsPath(sub){ return fbDb.doc('ts_data/'+tsUserId()+'/'+sub); }
 
 let fsSliceTimer=null;
+const fsDirty={}, fsReady={}, fsLastJson={};
 function fsSaveSlices(){
   if(!fbUser) return;
-  const key=dayKey(state.date);
-  fsPath('slices/'+key).set({segs:state.segsByDay[key]||[],ts:Date.now()}).catch(e=>console.error('fs slice',e));
+  let retry=false;
+  Object.keys(fsDirty).forEach(key=>{
+    if(!fsReady[key]){ retry=true; return; }          // never write a day we haven't loaded from the cloud yet
+    delete fsDirty[key];
+    const segs=state.segsByDay[key]||[];
+    const js=JSON.stringify(segs);
+    if(js===fsLastJson[key]) return;                   // nothing really changed (e.g. only scrolled/zoomed)
+    fsLastJson[key]=js;
+    fsPath('slices/'+key).set({segs:segs,ts:Date.now()}).catch(e=>{ fsLastJson[key]=null; console.error('fs slice',e); });
+  });
+  if(retry){ clearTimeout(fsSliceTimer); fsSliceTimer=setTimeout(fsSaveSlices,5000); }
 }
-function scheduleSliceSave(){ clearTimeout(fsSliceTimer); fsSliceTimer=setTimeout(fsSaveSlices,1500); }
+function scheduleSliceSave(){ fsDirty[dayKey(state.date)]=true; clearTimeout(fsSliceTimer); fsSliceTimer=setTimeout(fsSaveSlices,1500); }
 
 function fsSaveConfig(){
   if(!fbUser) return;
   const ts=Date.now(); state._configTs=ts;
   fbDb.doc('ts_data/'+tsUserId()+'/config/main').set({palette:state.palette||DEFAULT_PALETTE,palettes:getPalettes(),trees:getTrees()||null,ts}).catch(e=>console.error('fs cfg',e));
 }
-function fsSaveHotBtns(){
+/* Hot buttons: merge (never replace). Cloud doc = {items, deleted:[keys], ts}.
+   Result = (cloud items + this device's items) minus deleted keys. */
+async function fsMergeHot(local, added, removed){
+  if(!fbUser) return false;
+  const ref=fbDb.doc('ts_data/'+tsUserId()+'/config/hotbtns');
+  try{
+    const merged=await fbDb.runTransaction(async tx=>{
+      const snap=await tx.get(ref);
+      const d=snap.exists?snap.data():{};
+      const cloud=Array.isArray(d.items)?d.items:[];
+      let tomb=Array.isArray(d.deleted)?d.deleted.slice():[];
+      removed.forEach(k=>{ if(tomb.indexOf(k)<0) tomb.push(k); });
+      tomb=tomb.filter(k=>added.indexOf(k)<0);
+      const out=dedupeHot(cloud.concat(local)).filter(h=>tomb.indexOf(hotKey(h))<0);
+      tx.set(ref,{items:out,deleted:tomb,ts:Date.now()});
+      return out;
+    });
+    _basSetHotBtns(merged);
+    const pop=document.getElementById('hotPop');
+    if(pop&&pop.classList.contains('open')) renderHot();
+    return true;
+  }catch(e){ console.error('fs hot merge',e); return false; }
+}
+let fsHotUnsub=null;
+function fsListenHot(){
+  if(fsHotUnsub){ fsHotUnsub(); fsHotUnsub=null; }
   if(!fbUser) return;
-  fbDb.doc('ts_data/'+tsUserId()+'/config/hotbtns').set({items:getHotBtns(),ts:Date.now()}).catch(e=>console.error('fs hot',e));
+  fsHotUnsub=fbDb.doc('ts_data/'+tsUserId()+'/config/hotbtns').onSnapshot(snap=>{
+    if(!snap.exists||snap.metadata.hasPendingWrites||snap.metadata.fromCache) return;
+    const d=snap.data(); if(!Array.isArray(d.items)) return;
+    const items=dedupeHot(d.items);
+    if(JSON.stringify(items)===JSON.stringify(getHotBtns())) return;
+    _basSetHotBtns(items);
+    const pop=document.getElementById('hotPop');
+    if(pop&&pop.classList.contains('open')) renderHot();
+  },e=>console.error('fs hot listen',e));
 }
 
 async function fsLoadAll(){
@@ -1152,17 +1196,21 @@ async function fsLoadAll(){
       // Nothing in Firestore yet — seed it from local state
       fsSaveConfig();
     }
-    const hb=await fbDb.doc('ts_data/'+tsUserId()+'/config/hotbtns').get();
-    if(hb.exists&&Array.isArray(hb.data().items)) setHotBtns(dedupeHot(hb.data().items));
+    // Merge this device's hot buttons with the cloud's (also uploads any that only exist here)
+    await fsMergeHot(getHotBtns(),[],[]);
     const today=dayKey(state.date); const yd=new Date(state.date); yd.setDate(yd.getDate()-1);
     for(const k of [today,dayKey(yd)]){
-      const doc=await fsPath('slices/'+k).get();
+      const doc=await fsPath('slices/'+k).get({source:'server'});
       if(doc.exists&&Array.isArray(doc.data().segs)){
         state.segsByDay[k]=doc.data().segs;
+        fsLastJson[k]=JSON.stringify(doc.data().segs);
       }
+      fsReady[k]=true;
     }
+    scheduleSliceSave();
   }catch(e){ console.error('fsLoadAll',e); }
   fsListenConfig();
+  fsListenHot();
   requestAnimationFrame(()=>{ layout(); requestAnimationFrame(layout); });
 }
 
@@ -1172,12 +1220,18 @@ function fsListenSlices(){
   if(!fbUser) return;
   const key=dayKey(state.date);
   fsSliceUnsub=fsPath('slices/'+key).onSnapshot(snap=>{
-    if(!snap.exists) return;
+    if(snap.metadata.fromCache||snap.metadata.hasPendingWrites) return;   // only trust confirmed server data
+    if(!snap.exists){ fsReady[key]=true; return; }
     const d=snap.data();
-    // Only apply if Firestore timestamp is newer than our last local write
     if(Array.isArray(d.segs)){
+      const js=JSON.stringify(d.segs);
+      fsReady[key]=true;
+      if(fsDirty[key]){ return; }                                        // we have an unsent local edit; don't clobber it
+      fsLastJson[key]=js;
+      if(js===JSON.stringify(state.segsByDay[key]||[])) return;
       fbApplyingRemote=true;
       try{ state.segsByDay[key]=d.segs; }finally{ fbApplyingRemote=false; }
+      if(typeof layout==='function') requestAnimationFrame(layout);
     }
   },e=>console.error('fs listen',e));
 }
@@ -1233,7 +1287,16 @@ function save(){
   }
 }
 function setPalettes(a){ _basSetPalettes(a); if(typeof fbUser!=='undefined'&&fbUser) fsSaveConfig(); }
-function setHotBtns(a){ _basSetHotBtns(a); if(typeof fbUser!=='undefined'&&fbUser) fsSaveHotBtns(); }
+function setHotBtns(a){
+  const prev=getHotBtns();
+  _basSetHotBtns(a);
+  if(typeof fbUser!=='undefined'&&fbUser){
+    const pk=prev.map(hotKey), nk=a.map(hotKey);
+    fsMergeHot(a, nk.filter(k=>pk.indexOf(k)<0), pk.filter(k=>nk.indexOf(k)<0)).then(ok=>{ if(!ok) hotStatus('Saved on this device only; will sync when online.'); });
+  }
+}
+// Re-attach live listeners whenever the app comes back to the foreground
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && fbUser){ fsListenSlices(); fsListenHot(); } });
 
 
 /* ---------- cross-device sync (Google Drive app-data) ----------
@@ -1528,7 +1591,7 @@ ed('edClose').addEventListener('click', closeEditor);
 
 /* ---------- hot buttons (shared master list across devices) ---------- */
 function getHotBtns(){ try{ return JSON.parse(localStorage.getItem('ts_hotbtns')||'[]'); }catch(e){ return []; } }
-function setHotBtns(a){ try{ localStorage.setItem('ts_hotbtns', JSON.stringify(a)); }catch(e){} }
+function _basSetHotBtns(a){ try{ localStorage.setItem('ts_hotbtns', JSON.stringify(a)); }catch(e){} }
 function hotStatus(m){ const e=document.getElementById('hotStatus'); if(e){ e.textContent=m||''; e.style.color = (m && m[0]==='✓') ? '#9be08a' : 'var(--dim)'; } }
 function hotKey(h){ return JSON.stringify([h.title||'',h.divIdx||0,h.cat||'',h.sub||'',h.note||'']); }
 function dedupeHot(arr){ const seen={}, out=[]; (arr||[]).forEach(h=>{ const k=hotKey(h); if(!seen[k]){ seen[k]=1; out.push(h); } }); return out; }
@@ -1538,6 +1601,7 @@ const HOT_FILE='timeslice-hotbtns.json';
 let hotFileId=null;
 function hotBlob(){ let t=parseInt(localStorage.getItem('ts_hot_at')||'0',10); if(!t){ t=Date.now(); localStorage.setItem('ts_hot_at',String(t)); } return { v:1, updatedAt:t, items:getHotBtns() }; }
 async function gHotPull(){
+  return;   // Drive hot-button sync retired; Firestore (fsMergeHot) is the source of truth
   if(!gtoken) return;
   try{
     const id=await driveFind(HOT_FILE);
@@ -1564,6 +1628,7 @@ async function gHotPull(){
   }catch(e){ console.error('hot pull', e); }
 }
 async function gHotPush(){
+  return;   // retired (see gHotPull)
   if(!gtoken) return;
   localStorage.setItem('ts_hot_at',String(Date.now()));
   try{ if(hotFileId===null) hotFileId=await driveFind(HOT_FILE); hotFileId=await driveUpload(HOT_FILE, hotFileId, hotBlob()); }
